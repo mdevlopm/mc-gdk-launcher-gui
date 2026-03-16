@@ -125,6 +125,104 @@ def make_row(label_text, widget, last=False):
     return row
 
 # ════════════════════════════════════════════════════════════════════════════
+# ProxyPass Canlı Log Penceresi (oyun çalışırken)
+# ════════════════════════════════════════════════════════════════════════════
+class ProxyLogWindow(Gtk.Window):
+    """Oyunla birlikte çalışan ProxyPass'in canlı loglarını gösterir."""
+    REFRESH_MS = 500   # kaç ms'de bir güncelle
+
+    def __init__(self, proxy_proc, parent=None):
+        super().__init__(title="ProxyPass — Canlı Log")
+        self.set_default_size(580, 360)
+        self.set_resizable(True)
+        if parent:
+            self.set_transient_for(parent)
+        self._proc      = proxy_proc
+        self._parent_win = parent
+        self._last_len   = 0
+        self._timer_id   = None
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(12); box.set_margin_bottom(12)
+        box.set_margin_start(12); box.set_margin_end(12)
+        self.set_child(box)
+
+        hdr = Gtk.Label(label="ProxyPass çıktısı (canlı)")
+        hdr.add_css_class("group-title")
+        hdr.set_halign(Gtk.Align.START)
+        box.append(hdr)
+
+        frame = Gtk.Frame()
+        frame.add_css_class("group-frame")
+        frame.set_vexpand(True)
+        box.append(frame)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        frame.set_child(scroll)
+
+        self.tv = Gtk.TextView()
+        self.tv.set_editable(False)
+        self.tv.set_cursor_visible(False)
+        self.tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.tv.add_css_class("term-view")
+        self.buf = self.tv.get_buffer()
+        scroll.set_child(self.tv)
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_row.set_halign(Gtk.Align.END)
+        box.append(btn_row)
+
+        clear_btn = Gtk.Button(label="Temizle")
+        clear_btn.connect("clicked", lambda _: self.buf.set_text(""))
+        btn_row.append(clear_btn)
+
+        close_btn = Gtk.Button(label="Kapat")
+        close_btn.connect("clicked", lambda _: self.close())
+        btn_row.append(close_btn)
+
+        self.connect("close-request", self._on_close)
+
+        # Mevcut log tamponunu hemen yaz, sonra periyodik güncelle
+        self._flush_buf()
+        self._timer_id = GLib.timeout_add(self.REFRESH_MS, self._tick)
+
+    def _flush_buf(self):
+        if not self._parent_win:
+            return
+        with self._parent_win._proxy_log_lock:
+            lines = list(self._parent_win._proxy_log_buf)
+        if lines:
+            self.buf.set_text("".join(lines))
+            self._last_len = len(lines)
+            self.tv.scroll_to_iter(self.buf.get_end_iter(), 0, False, 0, 0)
+
+    def _tick(self):
+        """Periyodik olarak yeni log satırlarını ekle."""
+        if not self._parent_win:
+            return GLib.SOURCE_REMOVE
+        with self._parent_win._proxy_log_lock:
+            buf = self._parent_win._proxy_log_buf
+            new_lines = buf[self._last_len:]
+            self._last_len = len(buf)
+        if new_lines:
+            end = self.buf.get_end_iter()
+            self.buf.insert(end, "".join(new_lines))
+            self.tv.scroll_to_iter(self.buf.get_end_iter(), 0, False, 0, 0)
+        # Proc bittiyse dur
+        if self._proc and self._proc.poll() is not None:
+            return GLib.SOURCE_REMOVE
+        return GLib.SOURCE_CONTINUE
+
+    def _on_close(self, _):
+        if self._timer_id:
+            GLib.source_remove(self._timer_id)
+            self._timer_id = None
+        return False
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # ProxyPass Terminal Penceresi
 # ════════════════════════════════════════════════════════════════════════════
 class ProxyTermWindow(Gtk.Window):
@@ -334,6 +432,31 @@ window {
     border-radius: 8px;
 }
 
+/* ── Araçlar popover ── */
+.tools-btn {
+    padding: 4px 8px;
+    min-height: 0;
+    min-width: 0;
+}
+popover contents {
+    padding: 6px;
+}
+.tool-row {
+    padding: 4px 8px;
+    border-radius: 6px;
+    min-height: 32px;
+}
+.tool-row:hover {
+    background-color: alpha(@window_fg_color, 0.08);
+}
+.tool-row-label {
+    font-size: 13px;
+}
+.tool-sep {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
 /* ── Durum çubuğu ── */
 .status-bar {
     font-size: 11px;
@@ -346,7 +469,6 @@ window {
 /* ── İç group padding ── */
 .group-inner {
     border-radius: 12px;
-    overflow: hidden;
 }
 """
 
@@ -356,7 +478,11 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.set_default_size(480, -1)
         self.set_resizable(False)
         self.cfg         = load_cfg()
-        self._proxy_proc = None
+        self._proxy_proc     = None
+        self._game_proc      = None
+        self._mangohud_on    = False
+        self._proxy_log_buf  = []
+        self._proxy_log_lock = threading.Lock()
 
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
@@ -373,22 +499,66 @@ class LauncherWindow(Gtk.ApplicationWindow):
         title_lbl.add_css_class("title")
         hb.set_title_widget(title_lbl)
 
-        # HeaderBar sağ butonları
-        hb_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        # HeaderBar — tek Araçlar butonu + popover
+        tools_btn = Gtk.MenuButton()
+        tools_btn.set_icon_name("open-menu-symbolic")
+        tools_btn.set_tooltip_text("Araçlar")
+        tools_btn.add_css_class("flat")
 
-        folder_btn = Gtk.Button()
-        folder_btn.set_icon_name("folder-open-symbolic")
-        folder_btn.set_tooltip_text("Wine Prefix Klasörünü Aç  (Ctrl+W)")
-        folder_btn.connect("clicked", self._on_open_prefix)
-        hb_box.append(folder_btn)
+        popover = Gtk.Popover()
+        popover.set_has_arrow(False)
+        tools_btn.set_popover(popover)
 
-        winecfg_btn = Gtk.Button()
-        winecfg_btn.set_icon_name("preferences-system-symbolic")
-        winecfg_btn.set_tooltip_text("winecfg'yi Aç")
-        winecfg_btn.connect("clicked", self._on_winecfg)
-        hb_box.append(winecfg_btn)
+        pop_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        pop_box.set_margin_top(4); pop_box.set_margin_bottom(4)
+        pop_box.set_margin_start(4); pop_box.set_margin_end(4)
+        popover.set_child(pop_box)
 
-        hb.pack_end(hb_box)
+        def _pop_row(icon, label, callback, tooltip=""):
+            row_btn = Gtk.Button()
+            row_btn.add_css_class("flat")
+            row_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row_inner.add_css_class("tool-row")
+            img = Gtk.Image.new_from_icon_name(icon)
+            img.set_pixel_size(16)
+            row_inner.append(img)
+            lbl = Gtk.Label(label=label)
+            lbl.add_css_class("tool-row-label")
+            lbl.set_halign(Gtk.Align.START)
+            row_inner.append(lbl)
+            row_btn.set_child(row_inner)
+            if tooltip:
+                row_btn.set_tooltip_text(tooltip)
+            def _cb(_btn):
+                popover.popdown()
+                callback(None)
+            row_btn.connect("clicked", _cb)
+            return row_btn
+
+        pop_box.append(_pop_row(
+            "folder-open-symbolic",
+            "Wine Prefix Klasörünü Aç",
+            self._on_open_prefix,
+            "Ctrl+W"
+        ))
+        pop_box.append(_pop_row(
+            "preferences-system-symbolic",
+            "winecfg",
+            self._on_winecfg
+        ))
+        pop_box.append(Gtk.Separator())
+        pop_box.append(_pop_row(
+            "emblem-important-symbolic",
+            "Yükleme Donmasını Düzelt",
+            self._on_fix_loading_freeze
+        ))
+        pop_box.append(_pop_row(
+            "display-symbolic",
+            "VSync Kapat",
+            self._on_disable_vsync
+        ))
+
+        hb.pack_end(tools_btn)
 
         # ── Ana kutu ─────────────────────────────────────────────────────────
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
@@ -488,6 +658,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.login_btn.connect("clicked", self._on_proxy_login)
         proxy_btn_box.append(self.login_btn)
 
+        self.logout_btn = Gtk.Button(label="Oturumu Kapat")
+        self.logout_btn.add_css_class("destructive-action")
+        self.logout_btn.connect("clicked", self._on_proxy_logout)
+        proxy_btn_box.append(self.logout_btn)
+
+        self.proxylog_btn = Gtk.Button(label="Logları Gör")
+        self.proxylog_btn.connect("clicked", self._on_proxy_logs)
+        proxy_btn_box.append(self.proxylog_btn)
+
         self.dest_btn = Gtk.Button(label="Sunucu Ayarla")
         self.dest_btn.connect("clicked", self._on_dest_settings)
         proxy_btn_box.append(self.dest_btn)
@@ -500,7 +679,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
         self.launch_btn.add_css_class("suggested-action")
         self.launch_btn.add_css_class("launch-btn")
         self.launch_btn.set_hexpand(True)
-        self.launch_btn.connect("clicked", self._on_launch)
+        self.launch_btn.connect("clicked", self._on_launch_or_stop)
         root.append(self.launch_btn)
 
         # ── Durum çubuğu ─────────────────────────────────────────────────────
@@ -527,6 +706,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
                 if self.mangohud_btn.get_sensitive() else True)
         )
         ctrl.add_shortcut(shortcut_m)
+
+        shortcut_f = Gtk.Shortcut.new(
+            Gtk.ShortcutTrigger.parse_string("<Control>f"),
+            Gtk.CallbackAction.new(lambda *_: self._on_fix_loading_freeze(None) or True)
+        )
+        ctrl.add_shortcut(shortcut_f)
         self.add_controller(ctrl)
 
     # ── Yardımcılar ──────────────────────────────────────────────────────────
@@ -556,21 +741,33 @@ class LauncherWindow(Gtk.ApplicationWindow):
         jar = find_proxypass(exe)
 
         # auth durumu
-        if not jar:
+        has_jar  = bool(jar)
+        has_auth = auth_json_exists(exe)
+        is_running = (self._proxy_proc is not None and self._proxy_proc.poll() is None)
+
+        if not has_jar:
             self.auth_val.set_text("ProxyPass.jar bulunamadı")
             for c in ["ok","warn","error"]: self.auth_val.remove_css_class(c)
             self.auth_val.add_css_class("error")
+            self.login_btn.set_visible(True)
             self.login_btn.set_sensitive(False)
-        elif auth_json_exists(exe):
+            self.logout_btn.set_visible(False)
+            self.proxylog_btn.set_sensitive(False)
+        elif has_auth:
             self.auth_val.set_text("Giriş yapıldı ✓")
             for c in ["warn","error"]: self.auth_val.remove_css_class(c)
             self.auth_val.add_css_class("ok")
-            self.login_btn.set_sensitive(True)
+            self.login_btn.set_visible(False)
+            self.logout_btn.set_visible(True)
+            self.proxylog_btn.set_sensitive(is_running)
         else:
             self.auth_val.set_text("Giriş yapılmadı")
             for c in ["ok","error"]: self.auth_val.remove_css_class(c)
             self.auth_val.add_css_class("warn")
+            self.login_btn.set_visible(True)
             self.login_btn.set_sensitive(True)
+            self.logout_btn.set_visible(False)
+            self.proxylog_btn.set_sensitive(False)
 
         # destination
         if exe:
@@ -628,6 +825,65 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self._set_status(f"Klasör açıldı: {path}", "ok")
         except Exception as e:
             self._show_error("Hata", f"Klasör açılamadı:\n{e}")
+
+    def _options_txt_path(self):
+        return os.path.join(
+            COMPAT_DATA, "pfx", "drive_c", "users", "steamuser",
+            "AppData", "Roaming", "Minecraft Bedrock",
+            "Users", "Shared", "games", "com.mojang",
+            "minecraftpe", "options.txt"
+        )
+
+    def _patch_options(self, key, value):
+        """options.txt içinde key:value satırını yaz, yoksa ekle. True/hata mesajı döner."""
+        path = self._options_txt_path()
+        if not os.path.isfile(path):
+            return None  # dosya yok
+        with open(path) as f:
+            lines = f.readlines()
+        found = False
+        new_lines = []
+        for line in lines:
+            if line.startswith(key + ":"):
+                new_lines.append(f"{key}:{value}\n")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f"{key}:{value}\n")
+        with open(path, "w") as f:
+            f.writelines(new_lines)
+        return True
+
+    def _on_disable_vsync(self, _):
+        """gfx_vsync:0 — VSync'i kapat."""
+        if not os.path.isfile(self._options_txt_path()):
+            self._show_error(
+                "options.txt bulunamadı",
+                "Oyunu en az bir kez başlatıp kapattıktan sonra tekrar deneyin."
+            )
+            return
+        try:
+            self._patch_options("gfx_vsync", "0")
+            self._set_status("VSync kapatıldı ✓", "ok")
+        except Exception as e:
+            self._set_status(f"Hata: {e}", "error")
+            self._show_error("Yazma Hatası", str(e))
+
+    def _on_fix_loading_freeze(self, _):
+        """do_not_show_multiplayer_online_safety_warning:1 — yükleme donmasını düzelt."""
+        if not os.path.isfile(self._options_txt_path()):
+            self._show_error(
+                "options.txt bulunamadı",
+                "Oyunu en az bir kez başlatıp kapattıktan sonra tekrar deneyin."
+            )
+            return
+        try:
+            self._patch_options("do_not_show_multiplayer_online_safety_warning", "1")
+            self._set_status("Yükleme donması düzeltildi ✓", "ok")
+        except Exception as e:
+            self._set_status(f"Hata: {e}", "error")
+            self._show_error("Yazma Hatası", str(e))
 
     def _on_winecfg(self, _):
         """winecfg'yi GDK-Proton prefix'i üzerinden çalıştır."""
@@ -687,6 +943,54 @@ class LauncherWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self._refresh_proxy_labels)
         win = ProxyTermWindow(jar, os.path.dirname(jar), on_done=after_login)
         win.set_transient_for(self)
+        win.present()
+
+    # ── ProxyPass oturumu kapat ─────────────────────────────────────────────
+    def _on_proxy_logout(self, _):
+        exe = self.exe_entry.get_text().strip()
+        if not exe:
+            return
+        auth_path = os.path.join(os.path.dirname(os.path.dirname(exe)), "auth.json")
+        if not os.path.isfile(auth_path):
+            self._set_status("auth.json zaten yok.", None)
+            return
+
+        def confirm_delete():
+            dlg = Gtk.AlertDialog()
+            dlg.set_message("Oturumu kapat")
+            dlg.set_detail("auth.json silinecek ve mevcut ProxyPass bağlantısı kesilecek.\n\n" + auth_path)
+            dlg.set_buttons(["İptal", "Sil"])
+            dlg.set_default_button(0)
+            dlg.set_cancel_button(0)
+            dlg.choose(self, None, self._on_logout_confirm)
+            return False
+        GLib.idle_add(confirm_delete)
+
+    def _on_logout_confirm(self, dlg, result):
+        try:
+            idx = dlg.choose_finish(result)
+        except Exception:
+            return
+        if idx != 1:
+            return
+        exe = self.exe_entry.get_text().strip()
+        auth_path = os.path.join(os.path.dirname(os.path.dirname(exe)), "auth.json")
+        # Önce çalışan ProxyPass'i durdur
+        self._kill_proxy()
+        try:
+            os.remove(auth_path)
+            self._set_status("Oturum kapatıldı, auth.json silindi.", "ok")
+        except Exception as e:
+            self._set_status(f"Silinemedi: {e}", "error")
+        GLib.idle_add(self._refresh_proxy_labels)
+
+    # ── ProxyPass log penceresi ──────────────────────────────────────────────
+    def _on_proxy_logs(self, _):
+        if not self._proxy_proc or self._proxy_proc.poll() is not None:
+            self._set_status("ProxyPass şu an çalışmıyor.", "error")
+            GLib.idle_add(self._refresh_proxy_labels)
+            return
+        win = ProxyLogWindow(self._proxy_proc, parent=self)
         win.present()
 
     # ── GDK-Proton indir ─────────────────────────────────────────────────────
@@ -772,7 +1076,15 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.cfg["exe_path"] = path
             save_cfg(self.cfg)
 
-    # ── Oyunu başlat ─────────────────────────────────────────────────────────
+    # ── Oyunu başlat / durdur ────────────────────────────────────────────────
+    def _on_launch_or_stop(self, _):
+        if self._game_proc and self._game_proc.poll() is None:
+            # Oyun çalışıyor → durdur
+            self._game_proc.terminate()
+            self._set_status("Oyun durduruluyor...", "running")
+        else:
+            self._on_launch(None)
+
     def _on_launch(self, _):
         exe    = self.exe_entry.get_text().strip()
         proton = find_proton()
@@ -811,7 +1123,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
             env["MANGOHUD_CONFIG"] = "fps,frame_timing,gpu_stats,cpu_stats,vram,ram"
 
         self._set_status("Başlatılıyor...", "running")
-        GLib.idle_add(lambda: self.launch_btn.set_sensitive(False) or False)
+        GLib.idle_add(lambda: (
+            self.launch_btn.set_label("Oyunu Durdur") or
+            self.launch_btn.remove_css_class("suggested-action") or
+            self.launch_btn.add_css_class("destructive-action") or
+            False
+        ))
 
         jar = find_proxypass(exe)
 
@@ -823,11 +1140,27 @@ class LauncherWindow(Gtk.ApplicationWindow):
                     proxy_proc = subprocess.Popen(
                         ["java", "-jar", jar],
                         cwd=os.path.dirname(jar),
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         stdin=subprocess.DEVNULL,
                     )
-                    self._proxy_proc = proxy_proc
+                    self._proxy_proc     = proxy_proc
+                    self._proxy_log_buf  = []   # log satırları
+                    self._proxy_log_lock = threading.Lock()
+
+                    def _read_proxy_log(proc):
+                        for raw in iter(proc.stdout.readline, b""):
+                            line = raw.decode(errors="replace")
+                            with self._proxy_log_lock:
+                                self._proxy_log_buf.append(line)
+                                if len(self._proxy_log_buf) > 2000:
+                                    self._proxy_log_buf.pop(0)
+                        proc.stdout.close()
+
+                    threading.Thread(target=_read_proxy_log,
+                                     args=(proxy_proc,), daemon=True).start()
                     import time; time.sleep(2)
+                    # Loglar okunmaya başladıktan sonra butonu güncelle
+                    GLib.idle_add(self._refresh_proxy_labels)
 
                 if self._mangohud_on:
                     cmd = ["mangohud", "--dlsym", proton, "run", exe]
@@ -839,6 +1172,7 @@ class LauncherWindow(Gtk.ApplicationWindow):
                     cwd=os.path.dirname(exe), env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
+                self._game_proc = proc
                 self._set_status("Oyun çalışıyor...", "running")
 
                 def rd(pipe, tag):
@@ -862,7 +1196,14 @@ class LauncherWindow(Gtk.ApplicationWindow):
                 if proxy_proc and proxy_proc.poll() is None:
                     proxy_proc.terminate()
                 self._proxy_proc = None
-                GLib.idle_add(lambda: self.launch_btn.set_sensitive(True) or False)
+                self._game_proc  = None
+                GLib.idle_add(lambda: (
+                    self.launch_btn.set_label("Oyunu Başlat") or
+                    self.launch_btn.remove_css_class("destructive-action") or
+                    self.launch_btn.add_css_class("suggested-action") or
+                    False
+                ))
+                GLib.idle_add(self._refresh_proxy_labels)
 
         threading.Thread(target=runner, daemon=True).start()
 
