@@ -52,4 +52,6 @@ python3 main.py
 Bu proje açık kaynaklıdır. Detaylar için ilgili dosyalara göz atabilirsiniz.
 oyun dosyası suanda mevcut değil discord üzerinden iletişime geçebilirsiniz 
 discord ismi whtsyk
+##Katkıda bulunanlar 
+@mercimekcik https://github.com/Mercimekcik?tab=repositories
 
