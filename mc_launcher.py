@@ -16,6 +16,13 @@ CONFIG_FILE = os.path.join(SCRIPT_DIR, "mc_launcher_config.json")
 COMPAT_DATA = os.path.join(os.path.expanduser("~"), ".mc_gdk_prefix")
 GDK_API     = "https://api.github.com/repos/Weather-OS/GDK-Proton/releases/latest"
 
+# ── ProxyPass Sunucu Listesi (Buraya kendi sunucularınızı ekleyebilirsiniz) ──
+SERVER_LIST = [
+    {"name": "Localhost", "host": "127.0.0.1", "port": "19132"},
+    {"name": "Yerel Ağ", "host": "192.168.1.100", "port": "19132"},
+    {"name": "Örnek Sunucu", "host": "play.example.com", "port": "19132"}
+]
+
 # ── Config ───────────────────────────────────────────────────────────────────
 def load_cfg():
     try:
@@ -331,6 +338,20 @@ class DestinationDialog(Gtk.Window):
         box.set_margin_start(20); box.set_margin_end(20)
         self.set_child(box)
 
+        # ── Kayıtlı Sunucular ──
+        grp_servers, inner_servers = make_group("Kayıtlı Sunucular (Listeden Seç)")
+        box.append(grp_servers)
+
+        self.server_combo = Gtk.ComboBoxText()
+        self.server_combo.append_text("— Özel (Aşağıya Girin) —")
+        for srv in SERVER_LIST:
+            self.server_combo.append_text(f"{srv['name']} ({srv['host']}:{srv['port']})")
+        
+        self.server_combo.set_active(0)
+        self.server_combo.connect("changed", self._on_server_selected)
+        inner_servers.append(make_row("Kayıtlı Sunucu", self.server_combo, last=True))
+
+        # ── Manuel Hedef Sunucu (config.yml) ──
         grp_outer, grp_inner = make_group("Hedef Sunucu (config.yml)")
         box.append(grp_outer)
 
@@ -366,6 +387,116 @@ class DestinationDialog(Gtk.Window):
         if self.on_saved:
             self.on_saved(host, port, ok)
         self.close()
+
+    def _on_server_selected(self, combo):
+        idx = combo.get_active()
+        if idx > 0:
+            srv = SERVER_LIST[idx - 1]
+            self.host_entry.set_text(srv["host"])
+            self.port_entry.set_text(srv["port"])
+
+# ════════════════════════════════════════════════════════════════════════════
+# Minecraft Seçenekleri (options.txt) Düzenleyici
+# ════════════════════════════════════════════════════════════════════════════
+class OptionsWindow(Gtk.Window):
+    def __init__(self, parent, options_path):
+        super().__init__(title="Oyun Seçenekleri (options.txt)")
+        self.set_default_size(500, 600)
+        self.set_transient_for(parent)
+        self.set_modal(True)
+        self.options_path = options_path
+        self.entries = {}
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(16); box.set_margin_bottom(16)
+        box.set_margin_start(16); box.set_margin_end(16)
+        self.set_child(box)
+
+        hdr = Gtk.Label(label="Minecraft Ayarları")
+        hdr.add_css_class("group-title")
+        hdr.set_halign(Gtk.Align.START)
+        box.append(hdr)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        box.append(scroll)
+
+        self.list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.list_box.add_css_class("group-frame")
+        scroll.set_child(self.list_box)
+
+        self._load_options()
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_row.set_halign(Gtk.Align.END)
+        box.append(btn_row)
+
+        cancel_btn = Gtk.Button(label="İptal")
+        cancel_btn.connect("clicked", lambda _: self.close())
+        btn_row.append(cancel_btn)
+
+        save_btn = Gtk.Button(label="Kaydet")
+        save_btn.add_css_class("suggested-action")
+        save_btn.connect("clicked", self._on_save)
+        btn_row.append(save_btn)
+
+    def _load_options(self):
+        if not os.path.exists(self.options_path):
+            lbl = Gtk.Label(label="options.txt bulunamadı.")
+            lbl.set_margin_top(20)
+            self.list_box.append(lbl)
+            return
+
+        try:
+            with open(self.options_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if not line or ":" not in line:
+                    continue
+                
+                key, val = line.split(":", 1)
+                is_last = (i == len(lines) - 1)
+                
+                # Checkbox (Switch) for 0/1 values
+                if val in ["0", "1"]:
+                    switch = Gtk.Switch()
+                    switch.set_active(val == "1")
+                    switch.set_valign(Gtk.Align.CENTER)
+                    row = make_row(key, switch, last=is_last)
+                    self.entries[key] = switch
+                else:
+                    entry = Gtk.Entry()
+                    entry.set_text(val)
+                    entry.set_size_request(150, -1)
+                    row = make_row(key, entry, last=is_last)
+                    self.entries[key] = entry
+                
+                self.list_box.append(row)
+        except Exception as e:
+            self.list_box.append(Gtk.Label(label=f"Hata: {e}"))
+
+    def _on_save(self, _):
+        try:
+            new_lines = []
+            for key, widget in self.entries.items():
+                if isinstance(widget, Gtk.Switch):
+                    val = "1" if widget.get_active() else "0"
+                else:
+                    val = widget.get_text().strip()
+                new_lines.append(f"{key}:{val}\n")
+            
+            with open(self.options_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            
+            self.close()
+        except Exception as e:
+            msg = Gtk.AlertDialog()
+            msg.set_message("Kaydetme Hatası")
+            msg.set_detail(str(e))
+            msg.show(self)
 
 # ════════════════════════════════════════════════════════════════════════════
 # Ana Pencere
@@ -475,7 +606,7 @@ popover contents {
 class LauncherWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Minecraft GDK Launcher")
-        self.set_default_size(480, -1)
+        self.set_default_size(720, -1)
         self.set_resizable(False)
         self.cfg         = load_cfg()
         self._proxy_proc     = None
@@ -560,6 +691,13 @@ class LauncherWindow(Gtk.ApplicationWindow):
 
         hb.pack_end(tools_btn)
 
+        settings_btn = Gtk.Button()
+        settings_btn.set_icon_name("emblem-system-symbolic")
+        settings_btn.set_tooltip_text("Oyun Seçenekleri (options.txt)")
+        settings_btn.add_css_class("flat")
+        settings_btn.connect("clicked", self._on_open_options_gui)
+        hb.pack_end(settings_btn)
+
         # ── Ana kutu ─────────────────────────────────────────────────────────
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         root.set_margin_top(16); root.set_margin_bottom(16)
@@ -635,6 +773,12 @@ class LauncherWindow(Gtk.ApplicationWindow):
         browse_btn = Gtk.Button(label="Seç")
         browse_btn.connect("clicked", self._on_browse_exe)
         exe_box.append(browse_btn)
+        
+        scan_btn = Gtk.Button(label="Otomatik Bul")
+        scan_btn.connect("clicked", self._on_scan_exe)
+        scan_btn.set_tooltip_text("Diskleri tarayarak oyunu otomatik bulur")
+        exe_box.append(scan_btn)
+        
         inner2.append(make_row("Çalıştırılabilir", exe_box, last=True))
 
         # ── ProxyPass grubu ──────────────────────────────────────────────────
@@ -945,6 +1089,17 @@ class LauncherWindow(Gtk.ApplicationWindow):
         win.set_transient_for(self)
         win.present()
 
+    def _on_open_options_gui(self, _):
+        path = self._options_txt_path()
+        if not os.path.isfile(path):
+            self._show_error(
+                "options.txt bulunamadı",
+                "Oyunu en az bir kez başlatıp kapattıktan sonra tekrar deneyin."
+            )
+            return
+        win = OptionsWindow(self, path)
+        win.present()
+
     # ── ProxyPass oturumu kapat ─────────────────────────────────────────────
     def _on_proxy_logout(self, _):
         exe = self.exe_entry.get_text().strip()
@@ -1075,6 +1230,75 @@ class LauncherWindow(Gtk.ApplicationWindow):
             self.exe_entry.set_text(path)
             self.cfg["exe_path"] = path
             save_cfg(self.cfg)
+
+    # ── EXE Otomatik Bul ─────────────────────────────────────────────────────
+    def _on_scan_exe(self, btn):
+        btn.set_sensitive(False)
+        self._set_status("Diskler taranıyor... Lütfen bekleyin.", "running")
+
+        def worker():
+            try:
+                # Olası taranacak yollar
+                user = os.environ.get("USER", "")
+                search_roots = [
+                    SCRIPT_DIR,
+                    os.path.expanduser("~/Games"),
+                    os.path.expanduser("~/.local/share"),
+                    f"/run/media/{user}" if user else "/run/media",
+                    "/mnt"
+                ]
+
+                found_exes = []
+                for root_dir in search_roots:
+                    if not os.path.exists(root_dir):
+                        continue
+                    
+                    # 3. seviye derinliğine kadar tarama yapalım (find komutu ile)
+                    # Minecraft.Windows.exe dosyasını arıyoruz
+                    try:
+                        cmd = [
+                            "find", root_dir, 
+                            "-maxdepth", "4", 
+                            "-type", "f", 
+                            "-name", "Minecraft.Windows.exe"
+                        ]
+                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                        stdout, _ = proc.communicate(timeout=10) # 10 saniye zaman aşımı
+                        
+                        out_str = stdout.decode("utf-8").strip()
+                        if out_str:
+                            paths = [p.strip() for p in out_str.split('\n') if p.strip()]
+                            found_exes.extend(paths)
+                    except Exception as e:
+                        print(f"Tarama hatasi ({root_dir}): {e}")
+
+                GLib.idle_add(self._on_scan_finished, found_exes, btn)
+            except Exception as e:
+                GLib.idle_add(self._set_status, f"Tarama hatası: {e}", "error")
+                GLib.idle_add(btn.set_sensitive, True)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_scan_finished(self, found_exes, btn):
+        btn.set_sensitive(True)
+        if not found_exes:
+            self._show_error("Bulunamadı", "Sistemde Minecraft.Windows.exe bulunamadı.")
+            self._set_status("Taramada oyun bulunamadı.", "warn")
+            return
+
+        # Birden fazla bulunduysa, içinde ProxyPass.jar olanı önceliklendir
+        best_match = found_exes[0]
+        for exe in found_exes:
+            if find_proxypass(exe):
+                best_match = exe
+                break
+
+        self.exe_entry.set_text(best_match)
+        self.cfg["exe_path"] = best_match
+        save_cfg(self.cfg)
+
+        self._set_status("Oyun otomatik olarak bulundu ve kaydedildi ✓", "ok")
+        self._refresh_proxy_labels()
 
     # ── Oyunu başlat / durdur ────────────────────────────────────────────────
     def _on_launch_or_stop(self, _):
