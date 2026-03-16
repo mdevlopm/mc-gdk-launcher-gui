@@ -29,7 +29,8 @@ sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
 
 ## Kurulum
 
-Projeyi klonladıktan veya indirdikten sonra terminal üzerinden şu komutu çalıştırarak uygulamayı sisteminize kurabilirsiniz:
+öncelikle projeyi klonlamanız gerekmektedir ardından klonladıgnız dizine girip komutları çalıştırmanız yeterlidir artık gnome arayüzünde uygulamanın iconu belirecek
+
 
 ```bash
 chmod +x setup.sh
