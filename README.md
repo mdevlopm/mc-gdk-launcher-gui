@@ -1,57 +1,80 @@
-# mc-gdk-launcher-gui
 # Minecraft GDK Launcher (Linux)
 
-Minecraft GDK için geliştirilmiş, modern ve modüler bir başlatıcıdır. Python, GTK4 ve Libadwaita kullanılarak Linux sistemler için optimize edilmiştir.
+A clean, modern launcher built with **GTK4 / Libadwaita** to run **Minecraft Bedrock (GDK)** on Linux via **GDK-Proton**.
+Includes integrated **ProxyPass** support for handling Microsoft authentication and custom server routing.
 
+---
 
-## Özellikler
+## 🚀 Features
 
-- **Modern Arayüz**: Libadwaita ile temiz, adaptif ve sistem temasına uyumlu (Dark/Light mode) bir tasarım.
-- **ProxyPass Desteği**: Sunucu bağlantıları için entegre ProxyPass yönetimi.
-- **Proton/GDK Entegrasyonu**: GDK-Proton üzerinden yüksek performanslı oyun deneyimi.
-- **Modüler Yapı**: Java Runtime, Proxy ve Oyun mantığı birbirinden bağımsız, kolay geliştirilebilir modüller.
-- **Kolay Kurulum**: Tek komutla masaüstü entegrasyonu.
-- **Sunucu Yönetimi**: Hazır sunucu listesi ve özel sunucu ekleme desteği.
+* **Native GNOME-style UI** powered by Libadwaita
+* **GDK-Proton management** (download and install directly inside the app)
+* **ProxyPass integration**
 
-## Gereksinimler
+  * Microsoft account login handling
+  * Custom destination server configuration
+* **Automatic Java runtime downloader** (used by ProxyPass when required)
+* **Desktop integration**
 
-Uygulamayı çalıştırmak için sisteminizde aşağıdaki paketlerin yüklü olması gerekir:
+  * `setup.sh` creates an application menu shortcut
 
-- **Python 3.9+**
-- **GTK4**
-- **Libadwaita 1.0+**
-- **PyGObject** (`python3-gi`)
+---
 
-Debian/Ubuntu tabanlı sistemlerde kurulum:
+## 📦 Requirements
+
+This project relies on **system-level dependencies** (not pip-installed packages):
+
+* Python **3.9+**
+* GTK **4**
+* Libadwaita **1.0+**
+* PyGObject (`python3-gi`)
+* `xdg-utils`
+
+### Debian / Ubuntu
+
 ```bash
-sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 xdg-utils
 ```
 
-## Kurulum
+---
 
-öncelikle projeyi klonlamanız gerekmektedir ardından klonladıgnız dizine girip komutları çalıştırmanız yeterlidir artık gnome arayüzünde uygulamanın iconu belirecek
+## 🛠️ Installation
 
+Clone the repository and run:
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-Bu işlem uygulama menünüzde bir kısayol oluşturacak ve ikonu sisteme tanıtacaktır.
+This script:
 
-## Kullanım
+* Installs required dependencies (if available)
+* Creates a desktop/application menu entry
 
-Eğer kurulum yapmadan doğrudan çalıştırmak isterseniz:
+---
+
+## ▶️ Run Without Installation
 
 ```bash
 python3 main.py
 ```
 
-## Lisans
+---
 
-Bu proje açık kaynaklıdır. Detaylar için ilgili dosyalara göz atabilirsiniz.
-oyun dosyası suanda mevcut değil discord üzerinden iletişime geçebilirsiniz 
-discord ismi whtsyk
-##Katkıda bulunanlar 
-@mercimekcik https://github.com/Mercimekcik?tab=repositories
+## ⚠️ Notes
 
+* This repository **does not include game files**
+* Discord integration is planned for future updates
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+## 👤 Credits
+@mercimekcik
+GitHub: https://github.com/Mercimekcik?tab=repositories
