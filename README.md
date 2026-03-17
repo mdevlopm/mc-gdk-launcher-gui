@@ -1,4 +1,4 @@
-# Minecraft GDK Launcher (Linux)
+## Run Minecraft Bedrock on Linux (GDK) — Simple GTK Launcher
 
 A clean, modern launcher built with **GTK4 / Libadwaita** to run **Minecraft Bedrock (GDK)** on Linux via **GDK-Proton**.
 Includes integrated **ProxyPass** support for handling Microsoft authentication and custom server routing.
