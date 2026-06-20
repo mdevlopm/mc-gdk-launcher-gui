@@ -1,100 +1,91 @@
 # 🎮 Minecraft Bedrock Linux (GDK) Launcher
 
-[![Platform Linux](https://img.shields.io/badge/platform-Linux-blue.svg)](https://www.linux.org)
-[![GTK4 Libadwaita](https://img.shields.io/badge/UI-GTK4%20%2F%20Libadwaita-orange.svg)](https://gnome.pages.gitlab.gnome.org/libadwaita/)
-[![License MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+A standalone launcher designed to run the Minecraft Bedrock (GDK) edition on Linux, built with GTK4 and Libadwaita for a premium, modern interface.
+This launcher manages GDK-Proton tooling and advanced authentication mechanisms required to run the game's Microsoft GDK compatibility layer on Linux.
 
-Linux üzerinde **Minecraft Bedrock (GDK)** sürümünü oynamak için tasarlanmış, **GTK4 ve Libadwaita** teknolojileriyle geliştirilmiş premium ve modern arayüze sahip bağımsız bir başlatıcı (launcher).
+## ✨ Key Features
 
-Bu başlatıcı, oyunun Microsoft GDK uyumluluk katmanını Linux üzerinde çalıştırmak için **GDK-Proton** araçlarını ve gelişmiş kimlik doğrulama mekanizmalarını yönetir.
+- **Modern & Premium Design:** Fully compliant with GNOME design guidelines and Libadwaita standards, featuring system-theme-aware dark mode and glassmorphic card design.
+- **Dynamic Dual Login Mode:**
+  - 🌐 **ProxyPass Method:** Uses a local proxy server to route Microsoft authentication traffic. When this mode is selected, the launcher automatically restores game files to vanilla state, cleans up extra DLL patches, and resets Wine MSA registry entries. Uses the standard GDK-Proton build.
+  - 🎮 **In-Game Login Method:** Automatically installs and integrates the patched `xuser` GDK-Proton build and the custom DLL hooks (`XCurl.dll`, `libHttpClient.GDK.dll`) required for in-game authentication to work.
+- **Automatic Dependency Management:**
+  - Download and install compatible GDK-Proton versions directly from within the launcher.
+  - Automatically detect and download the Java Runtime required for ProxyPass.
+- **Integrated Store:** Download and install custom archive resource packs, mods, and skins to the game with a single click.
+- **options.txt Editor:** Search and edit in-game settings directly from the UI, without closing the launcher or using a file manager.
+- **Built-in Crash Resolver:** Automatic patch triggers to fix freezing or black-screen issues.
 
----
+## 🛠️ System Requirements
 
-## ✨ Öne Çıkan Özellikler
+This application requires system libraries and Python PyGObject bindings:
 
-- **Modern & Premium Tasarım:** Tamamen GNOME tasarım kılavuzlarına ve Libadwaita standartlarına uygun, sistem temasıyla uyumlu koyu mod ve cam (glassmorphic) kart tasarımları.
-- **Dinamik Çift Giriş Modu:**
-  - 🌐 **ProxyPass Yöntemi:** Microsoft kimlik doğrulama trafiğini yönlendirmek için yerel bir ara sunucu kullanır. Bu mod seçildiğinde başlatıcı otomatik olarak oyun dosyalarını vanilla (temiz) durumuna getirir, fazlalık DLL yamalarını temizler ve Wine MSA kayıt defteri girdilerini sıfırlar. Standart GDK-Proton sürümünü kullanır.
-  - 🎮 **Oyun İçi (In-Game) Giriş Yöntemi:** Oyun içi girişin çalışabilmesi için özel yama içeren `xuser` GDK-Proton sürümünü ve özel DLL kancalarını (`XCurl.dll`, `libHttpClient.GDK.dll`) otomatik olarak kurar ve entegre eder.
-- **Otomatik Bağımlılık Yönetimi:**
-  - Uyumlu GDK-Proton sürümlerini doğrudan başlatıcı içerisinden indirip kurma.
-  - ProxyPass için gerekli olan Java Runtime (çalışma zamanı) ortamını otomatik algılama ve indirme.
-- **Entegre Mağaza (Store):** Özel brarchive kaynak paketlerini, modları ve dış görünümleri (skin) tek tıkla indirip oyuna yükleme.
-- **options.txt Editörü:** Oyun içi ayarları başlatıcıyı kapatmadan veya dosya yöneticisiyle uğraşmadan doğrudan arayüz üzerinden arayıp değiştirebilme.
-- **Dahili Hata Çözücü:** Donma veya siyah ekran sorunlarını otomatik çözen yama tetikleyicileri.
-
----
-
-## 🛠️ Sistem Gereksinimleri
-
-Bu uygulama sistem kütüphanelerine ve Python PyGObject bağlayıcılarına ihtiyaç duyar:
-
-- **Python** 3.9 veya daha yeni bir sürüm
-- **GTK** 4.0 ve üzeri
-- **Libadwaita** 1.0 ve üzeri
-- **PyGObject** (`python3-gi`)
+- Python 3.9 or newer
+- GTK 4.0 or newer
+- Libadwaita 1.0 or newer
+- PyGObject (`python3-gi`)
 - `xdg-utils`
 
-### Paket Kurulumu (Debian / Ubuntu / Pop!_OS)
+### Package Installation (Debian / Ubuntu / Pop!_OS)
+
 ```bash
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 xdg-utils
 ```
 
----
+## 📦 Installation & Run Methods
 
-## 📦 Kurulum ve Çalıştırma Yöntemleri
+Three different methods are provided to install, package, or test the project on your system:
 
-Projeyi sisteminize kurmak, paketlemek veya test etmek için 3 farklı yöntem sunulmaktadır:
+### 1. System Installation (`setup.sh`)
 
-### 1. Sistem Kurulumu (`setup.sh`)
-Bu betik, uygulamayı kullanıcınızın yerel dizinine (`~/.local/share/applications`) yükler, gerekli bağımlılıkları kontrol eder ve uygulama menünüze kısayol ekler.
+This script installs the application into your user's local directory (`~/.local/share/applications`), checks for required dependencies, and adds a shortcut to your application menu.
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
-- **Terminalden Çalıştırma:** `mc-gdk-launcher`
-- **Masaüstü Dosyası:** `~/.local/share/applications/com.mc.gdk.launcher.desktop`
 
-### 2. Standalone AppImage Oluşturma
-Bağımsız, taşınabilir bir AppImage paketi oluşturmak için:
+- **Run from terminal:** `mc-gdk-launcher`
+- **Desktop file:** `~/.local/share/applications/com.mc.gdk.launcher.desktop`
+
+### 2. Build a Standalone AppImage
+
+To build a portable, standalone AppImage package:
 
 ```bash
 chmod +x build-appimage.sh
 ./build-appimage.sh
 ```
-- **Çıktı:** `Minecraft_GDK_Launcher-x86_64.AppImage`
-- Uygulamayı hiçbir yere kurmadan doğrudan bu dosyaya çift tıklayarak çalıştırabilirsiniz.
 
-### 3. Flatpak Sandboxed Kurulumu
-Uygulamayı izole edilmiş bir Flatpak kapsayıcısında çalıştırmak istiyorsanız:
+- **Output:** `Minecraft_GDK_Launcher-x86_64.AppImage`
+- You can run the app directly by double-clicking this file, with no installation required.
+
+### 3. Flatpak Sandboxed Installation
+
+If you want to run the application in an isolated Flatpak container:
 
 ```bash
 chmod +x flatpak/install-local.sh
 ./flatpak/install-local.sh
 ```
-- **Çalıştırma Komutu:** `flatpak run com.mc.gdk.launcher`
-- Bağımlılıkları sandbox içerisine flathub aracılığıyla otomatik kurar.
 
----
+- **Run command:** `flatpak run com.mc.gdk.launcher`
+- Dependencies are automatically installed into the sandbox via Flathub.
 
-## 🚀 Geliştirici ve Test Modu (Kurulumsuz)
+## 🚀 Developer / Test Mode (No Installation)
 
-Kodlar üzerinde değişiklik yapıp doğrudan test etmek için aşağıdaki komut yeterlidir:
+To make changes to the code and test them directly:
 
 ```bash
 python3 main.py
 ```
 
----
+## ⚠️ Important Notes
 
-## ⚠️ Önemli Notlar
+- This project does **not** include Minecraft game files. You must provide the GDK edition's game files yourself and select the game's `.exe` path in the settings.
+- The launcher automatically performs file verification when switching between ProxyPass and In-Game modes. You may want to back up your files beforehand.
 
-- Bu proje **Minecraft oyun dosyalarını içermez**. GDK sürümüne ait oyun dosyalarını sizin temin etmeniz ve ayarlardan oyunun `.exe` yolunu seçmeniz gerekir.
-- ProxyPass ve In-Game geçişlerinde başlatıcı otomatik olarak dosya doğrulaması yapar. Dosyalarınızın yedeğini almak isteyebilirsiniz.
+## 👤 Author
 
----
-
-## 👤 Yapımcı
-- **@mercimekcik**
-- GitHub: [Mercimekcik Profil Sayfası](https://github.com/Mercimekcik?tab=repositories)
+- @mercimekcik
+- GitHub: [Mercimekcik Profile](https://github.com/Mercimekcik?tab=repositories)
