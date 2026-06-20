@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Minecraft GDK Launcher
+GenericName=Game Launcher
+Comment=Minecraft Bedrock (GDK) için Linux başlatıcısı
+Exec=mc-gdk-launcher
+Icon=com.mc.gdk.launcher
+Terminal=false
+Categories=Game;
+Keywords=minecraft;bedrock;gdk;launcher;proton;
+StartupNotify=true
+StartupWMClass=com.mc.gdk.launcher

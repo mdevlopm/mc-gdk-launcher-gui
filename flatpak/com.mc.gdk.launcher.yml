@@ -1,0 +1,49 @@
+app-id: com.mc.gdk.launcher
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: mc-gdk-launcher
+
+finish-args:
+  # Ağ: GDK-Proton, ProxyPass, Java indirmeleri
+  - --share=network
+  - --share=ipc
+  # Grafik
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # Oyun dosyası seçimi, prefix, indirilen bileşenler
+  - --filesystem=home
+  # Steam Proton uyumluluk yolları (salt okunur)
+  - --filesystem=xdg-run/app/com.valvesoftware.Steam:ro
+  - --filesystem=~/.steam:ro
+  # Dosya seçici ve xdg-open portalları
+  - --talk-name=org.freedesktop.portal.*
+  - --talk-name=org.freedesktop.Flatpak
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - '*.la'
+  - '*.a'
+
+modules:
+  - name: mc-gdk-launcher
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 flatpak/mc-gdk-launcher.sh /app/bin/mc-gdk-launcher
+      - install -Dm644 main.py /app/lib/mc-gdk-launcher/main.py
+      - cp -a mc_launcher /app/lib/mc-gdk-launcher/
+      - cp -a assets /app/lib/mc-gdk-launcher/assets
+      - install -Dm644 flatpak/com.mc.gdk.launcher.desktop /app/share/applications/com.mc.gdk.launcher.desktop
+      - install -Dm644 flatpak/com.mc.gdk.launcher.metainfo.xml /app/share/metainfo/com.mc.gdk.launcher.metainfo.xml
+      - |
+        ICON_SRC=assets/icon.svg
+        if [ -f assets/minecraft_gdk_launcher_logo.svg ]; then
+          ICON_SRC=assets/minecraft_gdk_launcher_logo.svg
+        fi
+        install -Dm644 "$ICON_SRC" /app/share/icons/hicolor/scalable/apps/com.mc.gdk.launcher.svg
+    sources:
+      - type: dir
+        path: ../.flatpak-src

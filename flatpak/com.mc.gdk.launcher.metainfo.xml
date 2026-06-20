@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.mc.gdk.launcher</id>
+  <name>Minecraft GDK Launcher</name>
+  <summary>Minecraft Bedrock (GDK) launcher for Linux</summary>
+  <description>
+    <p>
+      Modern GTK4 / Libadwaita launcher to run Minecraft Bedrock (GDK) on Linux
+      using GDK-Proton. Includes ProxyPass integration for Microsoft login and
+      custom server routing, plus an integrated setup wizard.
+    </p>
+    <p>
+      Oyun dosyaları dahil değildir; Minecraft Bedrock Windows sürümünü
+      (Minecraft.Windows.exe) kendiniz sağlamalısınız.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.mc.gdk.launcher.desktop</launchable>
+  <developer_name>mercimekcik</developer_name>
+  <url type="homepage">https://github.com/mdevlopm/mc-gdk-launcher-gui</url>
+  <url type="bugtracker">https://github.com/mdevlopm/mc-gdk-launcher-gui/issues</url>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Game</category>
+  </categories>
+  <releases>
+    <release version="1.1.0" date="2026-06-17">
+      <description>
+        <p>GTK4 launcher with ProxyPass, setup wizard and customizable backgrounds.</p>
+      </description>
+    </release>
+  </releases>
+</component>

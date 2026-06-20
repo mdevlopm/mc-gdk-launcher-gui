@@ -1,0 +1,12 @@
+# Flatpak build artifacts
+.flatpak-src/
+flatpak/build/
+flatpak/repo/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# AppImage build artifacts
+build-appimage/
+*.AppImage
