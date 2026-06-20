@@ -10,3 +10,5 @@ __pycache__/
 # AppImage build artifacts
 build-appimage/
 *.AppImage
+__pycache__/
+*.pyc
