@@ -25,9 +25,9 @@
     <category>Game</category>
   </categories>
   <releases>
-    <release version="2.4.2" date="2026-06-22">
+    <release version="2.4.3" date="2026-06-23">
       <description>
-        <p>GDK Launcher version 2.4.2 hotfix release. Adds File selection support for Minecraft add-ons and worlds, and resolves ProxyPass login issues.</p>
+        <p>GDK Launcher version 2.4.3 hotfix release. Fixes a critical Flatpak installation error (ldconfig 256) by correcting 32-bit GL extension mappings.</p>
       </description>
     </release>
   </releases>
