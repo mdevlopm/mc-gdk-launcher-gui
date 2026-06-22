@@ -212,6 +212,23 @@ def download_and_install_content(
         parsed = urllib.parse.urlparse(url)
         path = urllib.parse.unquote(parsed.path)
         
+        # Local file bypass
+        if url.startswith("file://") or os.path.isfile(url):
+            local_path = path if url.startswith("file://") else url
+            if not os.path.isfile(local_path):
+                return False, "File not found"
+            ext = os.path.splitext(local_path)[1].lower()
+            install_errs = []
+            def log_progress(msg):
+                on_progress(msg)
+                if any(x in msg.lower() for x in ["hata", "error", "failed", "başarısız"]):
+                    install_errs.append(msg)
+            success = install_bedrock_content(local_path, log_progress, detected_ext=ext)
+            if success:
+                return True, ""
+            else:
+                return False, install_errs[-1] if install_errs else _t("toast_install_failed")
+        
         # 1. URL path'inden varsayılan uzantıyı bul
         ext = os.path.splitext(path)[1].lower()
         

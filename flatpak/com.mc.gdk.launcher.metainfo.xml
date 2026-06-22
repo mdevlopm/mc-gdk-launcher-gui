@@ -25,9 +25,9 @@
     <category>Game</category>
   </categories>
   <releases>
-    <release version="2.2" date="2026-06-22">
+    <release version="2.4.2" date="2026-06-22">
       <description>
-        <p>GDK Launcher version 2.2 release with Flatpak Steam integration, PyPI CFFI build compilation and user settings persistence.</p>
+        <p>GDK Launcher version 2.4.2 hotfix release. Adds File selection support for Minecraft add-ons and worlds, and resolves ProxyPass login issues.</p>
       </description>
     </release>
   </releases>

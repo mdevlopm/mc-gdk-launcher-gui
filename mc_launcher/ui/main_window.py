@@ -2193,7 +2193,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         about_page_widget.add(info_group)
         self.about_info_group = info_group
 
-        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.2")
+        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.4.2")
         info_group.add(ver_row)
         self.about_ver_row = ver_row
 
@@ -3552,6 +3552,13 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.store_custom_entry.connect("activate", self._on_custom_install_clicked)
         custom_box.append(self.store_custom_entry)
         
+        self.store_browse_btn = Gtk.Button()
+        self.store_browse_btn.set_icon_name("document-open-symbolic")
+        self.store_browse_btn.set_tooltip_text(_t("btn_browse"))
+        self.store_browse_btn.add_css_class("flat")
+        self.store_browse_btn.connect("clicked", self._on_store_browse_clicked)
+        custom_box.append(self.store_browse_btn)
+        
         self.store_custom_btn = Gtk.Button()
         self.store_custom_btn.add_css_class("suggested-action")
         self.store_custom_btn.add_css_class("pill")
@@ -3776,6 +3783,34 @@ class LauncherWindow(Adw.ApplicationWindow):
             return
         self.store_custom_entry.set_text("")
         self._install_store_content(url)
+
+    def _on_store_browse_clicked(self, _):
+        dlg = Gtk.FileDialog()
+        dlg.set_title(_t("dlg_select_background"))
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        
+        f_mc = Gtk.FileFilter()
+        f_mc.set_name("Minecraft Content (*.mcworld, *.mcpack, *.mcaddon, *.zip)")
+        f_mc.add_pattern("*.mcworld")
+        f_mc.add_pattern("*.mcpack")
+        f_mc.add_pattern("*.mcaddon")
+        f_mc.add_pattern("*.zip")
+        filters.append(f_mc)
+        
+        dlg.set_filters(filters)
+        dlg.open(self, None, self._on_store_file_chosen)
+
+    def _on_store_file_chosen(self, dlg, result):
+        try:
+            path = dlg.open_finish(result).get_path()
+        except Exception:
+            return
+        if not path:
+            return
+        
+        # Dosya yolunu file:// URI olarak belirleyip doğrudan kuralım
+        self.store_custom_entry.set_text("")
+        self._install_store_content(f"file://{path}")
 
     def _refresh_store_library(self):
         # Clear existing items
