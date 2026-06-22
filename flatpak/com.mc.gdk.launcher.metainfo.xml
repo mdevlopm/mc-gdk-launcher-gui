@@ -25,9 +25,9 @@
     <category>Game</category>
   </categories>
   <releases>
-    <release version="2.4.3" date="2026-06-23">
+    <release version="2.4.4" date="2026-06-23">
       <description>
-        <p>GDK Launcher version 2.4.3 hotfix release. Fixes a critical Flatpak installation error (ldconfig 256) by correcting 32-bit GL extension mappings.</p>
+        <p>GDK Launcher version 2.4.4 hotfix release. Completes the fix for 32-bit GL mappings by restoring GL32 extensions and properly setting up ld.so.conf for Steam Linux Runtime compatibility.</p>
       </description>
     </release>
   </releases>
