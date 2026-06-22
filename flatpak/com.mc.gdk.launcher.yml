@@ -1,25 +1,31 @@
 app-id: com.mc.gdk.launcher
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '49'
 sdk: org.gnome.Sdk
 command: mc-gdk-launcher
 
 finish-args:
-  # Ağ: GDK-Proton, ProxyPass, Java indirmeleri
+  # Ağ: GDK-Proton, ProxyPass, Java ve bağımlılık indirmeleri
   - --share=network
   - --share=ipc
-  # Grafik
+  # Grafik: Wayland + X11 fallback + DRM (GPU)
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
-  # Oyun dosyası seçimi, prefix, indirilen bileşenler
+  # Ses: PulseAudio/PipeWire (oyun sesi için)
+  - --socket=pulseaudio
+  # Oyun dosyası seçimi, Wine prefix, indirilen bileşenler
   - --filesystem=home
   # Steam Proton uyumluluk yolları (salt okunur)
-  - --filesystem=xdg-run/app/com.valvesoftware.Steam:ro
   - --filesystem=~/.steam:ro
-  # Dosya seçici ve xdg-open portalları
+  - --filesystem=~/.local/share/Steam:ro
+  - --filesystem=~/.var/app/com.valvesoftware.Steam:ro
+  # Dosya seçici, xdg-open, bildirim portalları
   - --talk-name=org.freedesktop.portal.*
   - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.freedesktop.FileManager1
+  # DBus oturum veri yolu (GTK dosya seçici için)
+  - --socket=session-bus
 
 cleanup:
   - /include
@@ -29,6 +35,37 @@ cleanup:
   - '*.a'
 
 modules:
+  # ── 1. pycparser (saf Python, cffi için) ──────────────────────────────────
+  - name: pycparser
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --prefix=/app pycparser-3.0-py3-none-any.whl
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
+        sha256: b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+
+  # ── 2. cffi 1.17.1 — kaynak koddan derleme ────────────────────────────────
+  - name: cffi
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --no-build-isolation --prefix=/app cffi-1.17.1.tar.gz
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/fc/97/c783634659c2920c3fc70419e3af40972dbaf758daa229a7d6ea6135c90d/cffi-1.17.1.tar.gz
+        sha256: 1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824
+
+  # ── 3. cryptography 42.0.8 (In-Game XBL kimlik doğrulama için) ──────────
+  - name: cryptography
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --no-deps --prefix=/app cryptography-42.0.8-cp39-abi3-manylinux_2_28_x86_64.whl
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/fa/e2/b7e6e8c261536c489d9cf908769880d94bd5d9a187e166b0dc838d2e6a56/cryptography-42.0.8-cp39-abi3-manylinux_2_28_x86_64.whl
+        sha256: 9c0c1716c8447ee7dbf08d6db2e5c41c688544c61074b54fc4564196f55c25a7
+
+  # ── 4. Launcher ──────────────────────────────────────────────────────────
   - name: mc-gdk-launcher
     buildsystem: simple
     build-commands:

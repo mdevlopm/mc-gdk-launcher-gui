@@ -14,19 +14,35 @@ from mc_launcher.config import SCRIPT_DIR, DATA_DIR, PROTON_DIR, GDK_API
 
 
 def _proton_search_dirs():
-    """Önce geliştirme/bundled dizin, sonra kullanıcı veri dizini."""
+    """Önce geliştirme/bundled dizin, sonra kullanıcı veri dizini ve Steam/Flatpak Steam dizinleri."""
     seen = set()
-    for d in (SCRIPT_DIR, PROTON_DIR):
-        real = os.path.realpath(d)
-        if real not in seen:
-            seen.add(real)
-            yield real
+    search_paths = [
+        SCRIPT_DIR,
+        PROTON_DIR,
+        os.path.expanduser("~/.steam/steam/compatibilitytools.d"),
+        os.path.expanduser("~/.steam/root/compatibilitytools.d"),
+        os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
+        os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/steam/compatibilitytools.d"),
+        os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d")
+    ]
+    for d in search_paths:
+        if os.path.isdir(d):
+            real = os.path.realpath(d)
+            if real not in seen:
+                seen.add(real)
+                yield real
 
 
 def _install_dir() -> str:
     """İndirme ve kurulum hedefi (Flatpak/sandbox uyumlu yazılabilir dizin)."""
     os.makedirs(PROTON_DIR, exist_ok=True)
     return PROTON_DIR
+
+
+def _version_key(path: str):
+    import re
+    parts = re.findall(r'\d+', os.path.basename(os.path.dirname(path)))
+    return [int(p) for p in parts]
 
 
 def find_proton(login_method: str = "proxypass") -> Optional[str]:
@@ -44,10 +60,10 @@ def find_proton(login_method: str = "proxypass") -> Optional[str]:
 
     if login_method == "ingame":
         if xuser_hits:
-            return sorted(set(xuser_hits))[-1]
+            return sorted(set(xuser_hits), key=_version_key)[-1]
     else: # proxypass
         if non_xuser_hits:
-            return sorted(set(non_xuser_hits))[-1]
+            return sorted(set(non_xuser_hits), key=_version_key)[-1]
         
     return None
 
@@ -70,6 +86,13 @@ def _do_extract(tar_path: str, on_status: Callable, remove_after: bool = False, 
                         member_path = os.path.realpath(os.path.join(dest_dir, m.name))
                         if not (member_path == dest_real or member_path.startswith(dest_real + os.sep)):
                             raise RuntimeError(f"Güvensiz arşiv yolu: {m.name}")
+                        
+                        if m.issym() or m.islnk():
+                            target_path = os.path.join(os.path.dirname(member_path), m.linkname)
+                            target_real = os.path.realpath(target_path)
+                            if not (target_real == dest_real or target_real.startswith(dest_real + os.sep)):
+                                raise RuntimeError(f"Güvensiz link hedefi: {m.linkname}")
+                                
                         t.extract(m, dest_dir)
                 except Exception as me:
                     print(f"[SKIP] {m.name}: {me}")
@@ -156,6 +179,12 @@ def download_proton(on_status: Callable, on_done: Callable, login_method: str = 
             if ok:
                 ensure_umu(on_status)
             on_done(ok)
+        except urllib.error.HTTPError as he:
+            if he.code == 403:
+                on_status("GitHub API limit exceeded. Please try again later or install GDK-Proton manually.", "error")
+            else:
+                on_status(f"HTTP Error: {he.code}", "error")
+            on_done(False)
         except Exception as e:
             on_status(f"İndirme hatası: {e}", "error")
             on_done(False)
@@ -263,6 +292,8 @@ def ensure_umu(on_status: Callable) -> Optional[str]:
         os.path.expanduser("~/.local/share/mc-gdk-linux-launcher/umu/umu-run"),
         os.path.expanduser("~/.local/share/lutris/runtime/umu/umu-run"),
         os.path.expanduser("~/.var/app/com.heroicgameslauncher.hgl/config/heroic/tools/runtimes/umu/umu-run"),
+        os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/steam/compatibilitytools.d/umu-launcher/umu-run"),
+        os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/umu-launcher/umu-run"),
     ]:
         if path and os.path.isfile(path):
             print(f"[UMU] Found existing umu-run at: {path}")
@@ -296,11 +327,36 @@ def ensure_umu(on_status: Callable) -> Optional[str]:
         url = asset["browser_download_url"]
         req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
         with urllib.request.urlopen(req2, timeout=90) as resp, open(tar_path, "wb") as out:
-            out.write(resp.read())
+            total = int(resp.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                chunk = resp.read(1024 * 64)
+                if not chunk:
+                    break
+                out.write(chunk)
+                done += len(chunk)
+                if total > 0:
+                    percent = min(100, int(done * 100 / total))
+                    on_status(f"{_t('umu_downloading', name=asset['name'])} ({percent}%)", "running")
 
         on_status(_t("umu_installing"), "running")
+        dest_real = os.path.realpath(dest_dir)
         with tarfile.open(tar_path, "r") as t:
-            t.extractall(dest_dir)
+            try:
+                t.extractall(dest_dir, filter="tar")
+            except TypeError:
+                for m in t.getmembers():
+                    member_path = os.path.realpath(os.path.join(dest_dir, m.name))
+                    if not (member_path == dest_real or member_path.startswith(dest_real + os.sep)):
+                        raise RuntimeError(f"Güvensiz arşiv yolu: {m.name}")
+                    
+                    if m.issym() or m.islnk():
+                        target_path = os.path.join(os.path.dirname(member_path), m.linkname)
+                        target_real = os.path.realpath(target_path)
+                        if not (target_real == dest_real or target_real.startswith(dest_real + os.sep)):
+                            raise RuntimeError(f"Güvensiz link hedefi: {m.linkname}")
+                            
+                    t.extract(m, dest_dir)
 
         # Look for umu-run recursively in dest_dir
         found_bin = None
@@ -318,6 +374,12 @@ def ensure_umu(on_status: Callable) -> Optional[str]:
             return bin_path
 
         on_status(_t("umu_err_no_run"), "error")
+        return None
+    except urllib.error.HTTPError as he:
+        if he.code == 403:
+            on_status("GitHub API limit exceeded. Please try again later or install umu-launcher manually.", "error")
+        else:
+            on_status(f"HTTP Error: {he.code}", "error")
         return None
     except Exception as e:
         on_status(f"{_t('err_title')}: {e}", "error")

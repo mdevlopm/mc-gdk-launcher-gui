@@ -17,10 +17,24 @@ def find_proxypass(exe_path: str = "") -> Optional[str]:
       1) Minecraft.exe'nin yanındaki / üstündeki ProxyPass.jar
       2) Launcher'ın XDG data dizinindeki (PROXYPASS_DIR/ProxyPass.jar)
     """
+    import zipfile
+    
+    def is_valid_jar(path: str) -> bool:
+        if os.path.isfile(path):
+            if zipfile.is_zipfile(path):
+                return True
+            else:
+                print(f"[ProxyPass] Found corrupt ProxyPass jar at {path}. Removing.")
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        return False
+
     # Launcher'ın indirdiği jar
     jar_local = os.path.join(PROXYPASS_DIR, "ProxyPass.jar")
     if not exe_path:
-        return jar_local if os.path.isfile(jar_local) else None
+        return jar_local if is_valid_jar(jar_local) else None
 
     parent = os.path.dirname(os.path.dirname(exe_path))
     for p in [
@@ -28,7 +42,7 @@ def find_proxypass(exe_path: str = "") -> Optional[str]:
         os.path.join(os.path.dirname(exe_path), "ProxyPass.jar"),
         jar_local,
     ]:
-        if os.path.isfile(p):
+        if is_valid_jar(p):
             return p
     return None
 
@@ -112,9 +126,24 @@ def read_proxypass_config(exe_path: str) -> dict:
             parts = stripped.split(":", 1)
             key = parts[0].strip()
             val = parts[1].strip()
-            # Remove inline comments
+            # Remove inline comments safely
             if "#" in val:
-                val = val.split("#", 1)[0].strip()
+                if val.startswith('"'):
+                    idx = val.find('"', 1)
+                    if idx != -1:
+                        val = val[:idx+1].strip()
+                elif val.startswith("'"):
+                    idx = val.find("'", 1)
+                    if idx != -1:
+                        val = val[:idx+1].strip()
+                else:
+                    val = val.split("#", 1)[0].strip()
+            
+            # Strip quotes
+            if val.startswith('"') and val.endswith('"'):
+                val = val[1:-1]
+            elif val.startswith("'") and val.endswith("'"):
+                val = val[1:-1]
                 
             if current_block == "proxy":
                 if key == "host":
@@ -147,14 +176,18 @@ def write_proxypass_config(exe_path: str, settings: dict) -> bool:
     if not path:
         return False
     
+    import tempfile
+    
     # Dosya yoksa şablon oluştur
     if not os.path.isfile(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"""# ProxyPass Configuration
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".config-", suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(f"""# ProxyPass Configuration
 proxy:
   host: {settings.get('proxy_host', '127.0.0.1')}
-  port: {settings.get('proxy_port', '19122')}
+  port: {settings.get('proxy_port', '19132')}
 
 destination:
   host: {settings.get('dest_host', '127.0.0.1')}
@@ -165,11 +198,28 @@ save-auth-details: {str(settings.get('save_auth_details', True)).lower()}
 broadcast-session: {str(settings.get('broadcast_session', False)).lower()}
 max-clients: {settings.get('max_clients', 0)}
 """)
-        return True
+                f.flush()
+                try:
+                    os.fsync(tmp_fd)
+                except OSError:
+                    pass
+            os.replace(tmp_path, path)
+            return True
+        except OSError as e:
+            print(f"[ProxyPass] write_proxypass_config error: {e}")
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return False
 
     # Dosya varsa satır satır güncelle
-    with open(path, encoding="utf-8", errors="replace") as f:
-        lines = f.readlines()
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError as e:
+        print(f"[ProxyPass] read config error: {e}")
+        return False
 
     new_lines = []
     current_block = None
@@ -197,7 +247,7 @@ max-clients: {settings.get('max_clients', 0)}
             parts = stripped.split(":", 1)
             key = parts[0].strip()
             # Girintiyi tespit et
-            indent = line[:line.find(key)]
+            indent = line[:len(line) - len(line.lstrip())]
             
             if current_block == "proxy":
                 if key == "host":
@@ -205,7 +255,7 @@ max-clients: {settings.get('max_clients', 0)}
                     i += 1
                     continue
                 elif key == "port":
-                    new_lines.append(f"{indent}port: {settings.get('proxy_port', '19122')}\n")
+                    new_lines.append(f"{indent}port: {settings.get('proxy_port', '19132')}\n")
                     i += 1
                     continue
             elif current_block == "destination":
@@ -252,9 +302,24 @@ max-clients: {settings.get('max_clients', 0)}
     if "max-clients" not in replaced_keys:
         new_lines.append(f"max-clients: {settings.get('max_clients', 0)}\n")
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(new_lines)
-    return True
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".config-", suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+            f.flush()
+            try:
+                os.fsync(tmp_fd)
+            except OSError:
+                pass
+        os.replace(tmp_path, path)
+        return True
+    except OSError as e:
+        print(f"[ProxyPass] write_proxypass_config error: {e}")
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return False
 
 
 PROXYPASS_API = "https://api.github.com/repos/Kas-tle/ProxyPass/releases/latest"
@@ -262,13 +327,23 @@ PROXYPASS_API = "https://api.github.com/repos/Kas-tle/ProxyPass/releases/latest"
 
 def ensure_proxypass(on_status) -> Optional[str]:
     """
-    PROXYPASS_DIR altına ProxyPass.jar indirir (yoksa) ve yolunu döner.
+    PROXYPASS_DIR altına ProxyPass.jar indirir (yoksa veya bozuksa) ve yolunu döner.
     """
     os.makedirs(PROXYPASS_DIR, exist_ok=True)
     jar_path = os.path.join(PROXYPASS_DIR, "ProxyPass.jar")
+    
+    import zipfile
     if os.path.isfile(jar_path):
-        return jar_path
+        if zipfile.is_zipfile(jar_path):
+            return jar_path
+        else:
+            print("[ProxyPass] Existing ProxyPass.jar is corrupt. Deleting and re-downloading!")
+            try:
+                os.remove(jar_path)
+            except OSError:
+                pass
 
+    tmp_jar_path = jar_path + ".tmp"
     try:
         from mc_launcher.i18n import _t
         on_status(_t("progress_download_proxypass"), "running")
@@ -285,7 +360,7 @@ def ensure_proxypass(on_status) -> Optional[str]:
 
         url = asset["browser_download_url"]
         req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
-        with urllib.request.urlopen(req2, timeout=60) as resp, open(jar_path, "wb") as out:
+        with urllib.request.urlopen(req2, timeout=60) as resp, open(tmp_jar_path, "wb") as out:
             total = int(resp.headers.get("Content-Length") or 0)
             done = 0
             while True:
@@ -301,11 +376,26 @@ def ensure_proxypass(on_status) -> Optional[str]:
                     on_status(f"{_t('progress_download_proxypass')} {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)", "running")
                 else:
                     on_status(f"{_t('progress_download_proxypass')} ({done // 1024} KB)", "running")
+            out.flush()
+            try:
+                os.fsync(out.fileno())
+            except OSError:
+                pass
+
+        if os.path.exists(tmp_jar_path):
+            os.replace(tmp_jar_path, jar_path)
+
         on_status(_t("toast_proxypass_download_ok"), "ok")
         return jar_path
     except Exception as e:
         on_status(f"ProxyPass indirme hatası: {e}", "error")
         return None
+    finally:
+        if os.path.exists(tmp_jar_path):
+            try:
+                os.remove(tmp_jar_path)
+            except OSError:
+                pass
 
 def remove_proxypass() -> bool:
     """ProxyPass.jar dosyasını (varsa) siler."""

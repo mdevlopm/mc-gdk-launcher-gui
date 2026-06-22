@@ -32,7 +32,9 @@ def find_java() -> Optional[str]:
         return None
     for root, dirs, files in os.walk(base):
         if "java" in files:
-            return os.path.join(root, "java")
+            candidate = os.path.join(root, "java")
+            if os.path.isfile(candidate) and "bin" in root.split(os.sep):
+                return candidate
     return None
 
 
@@ -55,6 +57,13 @@ def _safe_extract_tar(t: tarfile.TarFile, dest_dir: str) -> None:
         member_path = os.path.realpath(os.path.join(dest_dir, m.name))
         if not (member_path == dest_real or member_path.startswith(dest_real + os.sep)):
             raise RuntimeError(f"Güvensiz arşiv yolu: {m.name}")
+        
+        # Verify link targets if it is a symlink/hardlink to prevent symlink traversal
+        if m.issym() or m.islnk():
+            target_path = os.path.join(os.path.dirname(member_path), m.linkname)
+            target_real = os.path.realpath(target_path)
+            if not (target_real == dest_real or target_real.startswith(dest_real + os.sep)):
+                raise RuntimeError(f"Güvensiz link hedefi: {m.linkname}")
     t.extractall(dest_dir)
 
 
@@ -67,17 +76,19 @@ def ensure_java(on_status) -> Optional[str]:
     if java_bin:
         return java_bin
 
-    os.makedirs(_java_dir(), exist_ok=True)
-    tar_path = os.path.join(_java_dir(), "jre.tar.gz")
+    tar_path = os.path.join(RUNTIME_DIR, "jre.tar.gz")
+    tmp_tar_path = tar_path + ".tmp"
+    temp_dir = _java_dir() + ".tmp"
 
     try:
         from mc_launcher.i18n import _t
         on_status(_t("progress_download_java"), "running")
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
         req = urllib.request.Request(
             JAVA_URL, headers={"User-Agent": "mc-gdk-launcher"}
         )
         with urllib.request.urlopen(req, timeout=60) as resp, open(
-            tar_path, "wb"
+            tmp_tar_path, "wb"
         ) as out_f:
             total = int(resp.headers.get("Content-Length") or 0)
             done = 0
@@ -95,12 +106,29 @@ def ensure_java(on_status) -> Optional[str]:
                 else:
                     on_status(f"{_t('progress_download_java')} ({done // 1024} KB)", "running")
 
+        if os.path.exists(tmp_tar_path):
+            os.replace(tmp_tar_path, tar_path)
+
         on_status(_t("java_extracting"), "running")
+        
+        import shutil
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        os.makedirs(temp_dir, exist_ok=True)
+
         with tarfile.open(tar_path, "r:gz") as t:
-            _safe_extract_tar(t, _java_dir())
+            _safe_extract_tar(t, temp_dir)
+
+        # Atomic directory swap
+        if os.path.exists(_java_dir()):
+            shutil.rmtree(_java_dir(), ignore_errors=True)
+        os.rename(temp_dir, _java_dir())
 
         if os.path.exists(tar_path):
-            os.remove(tar_path)
+            try:
+                os.remove(tar_path)
+            except OSError:
+                pass
 
         java_bin = find_java()
         if java_bin:
@@ -113,6 +141,16 @@ def ensure_java(on_status) -> Optional[str]:
     except Exception as e:
         on_status(f"{_t('err_title')}: {e}", "error")
         return None
+    finally:
+        if os.path.exists(tmp_tar_path):
+            try:
+                os.remove(tmp_tar_path)
+            except OSError:
+                pass
+        if os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 def remove_java() -> bool:
     """Java runtime klasörünü siler."""
@@ -125,3 +163,4 @@ def remove_java() -> bool:
         except OSError:
             pass
     return False
+

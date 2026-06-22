@@ -52,6 +52,7 @@ mkdir -p "$BUILD_DIR" "$REPO_DIR"
 
 flatpak-builder \
   --force-clean \
+  --disable-rofiles-fuse \
   --install-deps-from=flathub \
   --repo="$REPO_DIR" \
   "$BUILD_DIR" \

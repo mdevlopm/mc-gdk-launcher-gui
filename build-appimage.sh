@@ -52,7 +52,7 @@ fi
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "${0}")")"
-export PYTHONPATH="${HERE}:${PYTHONPATH}"
+export PYTHONPATH="${HERE}${PYTHONPATH:+:$PYTHONPATH}"
 
 # Check for GTK4 and PyGObject dependencies on the host
 if ! python3 -c 'import gi; gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")' 2>/dev/null; then

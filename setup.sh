@@ -48,21 +48,21 @@ install_deps() {
         $SUDO apt-get update
         $SUDO apt-get install -y \
           python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 \
-          xdg-utils python3-cairo gir1.2-rsvg-2.0
+          xdg-utils python3-cairo gir1.2-rsvg-2.0 rsync
       fi
       ;;
     dnf)
       if [[ -n "$SUDO" ]]; then
         $SUDO dnf install -y \
           python3 python3-gobject gtk4 libadwaita xdg-utils \
-          python3-cairo rsvg2
+          python3-cairo rsvg2 rsync
       fi
       ;;
     pacman)
       if [[ -n "$SUDO" ]]; then
-        $SUDO pacman -Sy --noconfirm \
+        $SUDO pacman -S --noconfirm \
           python python-gobject gtk4 libadwaita xdg-utils \
-          python-cairo rsvg
+          python-cairo librsvg rsync
       fi
       ;;
     zypper)
@@ -70,8 +70,8 @@ install_deps() {
         $SUDO zypper --non-interactive in \
           python3 python3-gobject gtk4 libadwaita xdg-utils \
           python3-cairo typelib-1_0-Adw-1 typelib-1_0-Gtk-4_0 \
-          librsvg-2-2 || $SUDO zypper --non-interactive in \
-          python3 python3-gobject gtk4 libadwaita xdg-utils
+          librsvg-2-2 rsync || $SUDO zypper --non-interactive in \
+          python3 python3-gobject gtk4 libadwaita xdg-utils rsync
       fi
       ;;
     *)
@@ -105,18 +105,33 @@ fi
 echo "[2/5] Uygulama dosyaları kopyalanıyor..."
 mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$APP_DIR"
 
-rsync -a --delete \
-  --exclude '.git/' \
-  --exclude 'GDK-Proton10-32/' \
-  --exclude 'flatpak/build/' \
-  --exclude 'flatpak/repo/' \
-  --exclude 'flatpak/.build-src/' \
-  --exclude '__pycache__/' \
-  --exclude '*.pyc' \
-  "$PROJECT_DIR/main.py" \
-  "$PROJECT_DIR/mc_launcher" \
-  "$PROJECT_DIR/assets" \
-  "$INSTALL_DIR/"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete \
+    --exclude '.git/' \
+    --exclude 'GDK-Proton10-32/' \
+    --exclude 'flatpak/build/' \
+    --exclude 'flatpak/repo/' \
+    --exclude 'flatpak/.build-src/' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    "$PROJECT_DIR/main.py" \
+    "$PROJECT_DIR/mc_launcher" \
+    "$PROJECT_DIR/assets" \
+    "$INSTALL_DIR/"
+else
+  echo "  rsync bulunamadı, cp ile kopyalanıyor..."
+  mkdir -p "$INSTALL_DIR"
+  cp -a "$PROJECT_DIR/main.py" "$INSTALL_DIR/"
+  
+  # Remove old folders to mimic --delete behavior
+  rm -rf "$INSTALL_DIR/mc_launcher" "$INSTALL_DIR/assets"
+  cp -a "$PROJECT_DIR/mc_launcher" "$INSTALL_DIR/"
+  cp -a "$PROJECT_DIR/assets" "$INSTALL_DIR/"
+  
+  # Clean up cache files
+  find "$INSTALL_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+  find "$INSTALL_DIR" -type f -name "*.pyc" -delete 2>/dev/null || true
+fi
 
 chmod +x "$INSTALL_DIR/main.py"
 

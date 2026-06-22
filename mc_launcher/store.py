@@ -19,22 +19,31 @@ def find_all_mojang_dirs() -> List[str]:
         return []
     
     paths = []
-    # Sık kullanılan bilinen yolları öncelikli kontrol et
+    import getpass
+    try:
+        user_name = getpass.getuser()
+    except Exception:
+        user_name = os.environ.get("USER", "steamuser")
+        
     common_subpaths = [
         "users/steamuser/AppData/Roaming/Minecraft Bedrock/Users/Shared/games/com.mojang",
-        "users/mehmet/AppData/Roaming/Minecraft Bedrock/Users/Shared/games/com.mojang",
     ]
+    if user_name and user_name != "steamuser":
+        common_subpaths.append(f"users/{user_name}/AppData/Roaming/Minecraft Bedrock/Users/Shared/games/com.mojang")
+
     for sp in common_subpaths:
         p = os.path.join(drive_c, sp)
         if os.path.isdir(p) and p not in paths:
             paths.append(p)
             
-    # Tüm drive_c dizinini tarayarak com.mojang klasörlerini bul (XUID özel klasörleri dahil)
-    for root, dirs, _files in os.walk(drive_c):
-        if root.endswith("games") and "com.mojang" in dirs:
-            p = os.path.join(root, "com.mojang")
-            if p not in paths:
-                paths.append(p)
+    # Tüm drive_c/users dizinini tarayarak com.mojang klasörlerini bul (XUID özel klasörleri dahil)
+    users_dir = os.path.join(drive_c, "users")
+    if os.path.isdir(users_dir):
+        for root, dirs, _files in os.walk(users_dir):
+            if root.endswith("games") and "com.mojang" in dirs:
+                p = os.path.join(root, "com.mojang")
+                if p not in paths:
+                    paths.append(p)
     return paths
 
 
@@ -47,8 +56,8 @@ def detect_zip_type(file_path: str) -> str:
                 return ".mcworld"
             if any(name.lower().endswith(".mcpack") for name in names):
                 return ".mcaddon"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Store] Error detecting zip type for {file_path}: {e}")
     return ".mcpack"
 
 
@@ -100,16 +109,25 @@ def install_bedrock_content(
         return "resource_packs"
 
     def extract_zip_to(zip_ref, target_dir):
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir = os.path.abspath(target_dir)
         dest_real = os.path.realpath(target_dir)
-        members = zip_ref.infolist()
-        for member in members:
-            filename = member.filename
-            filename = re.sub(r'^([a-zA-Z]:)?[\/\\]+', '', filename)
-            member_path = os.path.realpath(os.path.join(target_dir, filename))
+        
+        for member in zip_ref.infolist():
+            clean_name = os.path.normpath(member.filename)
+            if clean_name.startswith("..") or os.path.isabs(clean_name):
+                continue
+                
+            member_path = os.path.abspath(os.path.join(target_dir, clean_name))
             if not member_path.startswith(dest_real + os.sep) and member_path != dest_real:
                 continue
-            zip_ref.extract(member, target_dir)
+                
+            if member.is_dir():
+                os.makedirs(member_path, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(member_path), exist_ok=True)
+                with zip_ref.open(member) as source, open(member_path, "wb") as dest:
+                    import shutil
+                    shutil.copyfileobj(source, dest)
 
     try:
         if ext == ".mcworld":
@@ -150,7 +168,7 @@ def install_bedrock_content(
             import tempfile
             with tempfile.TemporaryDirectory() as tmpdir:
                 with zipfile.ZipFile(file_path, 'r') as z:
-                    z.extractall(tmpdir)
+                    extract_zip_to(z, tmpdir)
                 
                 packs = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.lower().endswith(".mcpack")]
                 if not packs:
@@ -377,12 +395,31 @@ def list_installed_content() -> List[dict]:
 
 
 def delete_installed_content(path: str) -> bool:
-    """Kurulu içeriği (klasörü) siler."""
+    """Kurulu içeriği (klasörü) güvenli şekilde siler."""
     import shutil
     try:
-        if os.path.isdir(path):
-            shutil.rmtree(path)
+        abs_path = os.path.abspath(path)
+        mojang_dirs = [os.path.abspath(d) for d in find_all_mojang_dirs()]
+        
+        is_safe = False
+        allowed_subfolders = ["minecraftWorlds", "resource_packs", "behavior_packs", "skin_packs"]
+        
+        for base_dir in mojang_dirs:
+            for sub in allowed_subfolders:
+                allowed_prefix = os.path.join(base_dir, sub) + os.sep
+                if abs_path.startswith(allowed_prefix):
+                    is_safe = True
+                    break
+            if is_safe:
+                break
+                
+        if not is_safe:
+            print(f"[Store] Refusing to delete unsafe path: {path}")
+            return False
+            
+        if os.path.isdir(abs_path):
+            shutil.rmtree(abs_path)
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Store] Error deleting content: {e}")
     return False

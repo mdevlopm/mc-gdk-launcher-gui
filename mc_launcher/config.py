@@ -36,7 +36,7 @@ DEFAULT_CFG = {
     "exe_path": "",
     "injector_path": "",
     "injector_autorun": False,
-    "language": "tr",
+    "language": "en",
     "play_background": "default",
     "play_background_custom": "",
     "login_method": "proxypass", # "proxypass" or "ingame"
@@ -46,9 +46,21 @@ DEFAULT_CFG = {
 }
 
 
+import copy
+
+def deep_merge(dict1: dict, dict2: dict) -> dict:
+    """Recursively merges dict2 into dict1."""
+    for key, value in dict2.items():
+        if isinstance(value, dict) and key in dict1 and isinstance(dict1[key], dict):
+            deep_merge(dict1[key], value)
+        else:
+            dict1[key] = copy.deepcopy(value)
+    return dict1
+
+
 def load_cfg() -> dict:
     """Config dosyasını okur, yoksa ya da bozuksa varsayılanlarla birleştirir."""
-    cfg = DEFAULT_CFG.copy()
+    cfg = copy.deepcopy(DEFAULT_CFG)
     # Önce yeni XDG konumu, yoksa eski SCRIPT_DIR konumuna bak.
     paths = [CONFIG_FILE, os.path.join(SCRIPT_DIR, "mc_launcher_config.json")]
     for path in paths:
@@ -58,7 +70,7 @@ def load_cfg() -> dict:
             with open(path) as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                cfg.update(data)
+                deep_merge(cfg, data)
                 break
         except Exception:
             continue
@@ -68,9 +80,19 @@ def load_cfg() -> dict:
 def save_cfg(cfg: dict) -> None:
     """Config dosyasını kaydeder."""
     # Eksik anahtarlar varsa tamamla
-    out = DEFAULT_CFG.copy()
-    out.update(cfg or {})
+    out = copy.deepcopy(DEFAULT_CFG)
+    deep_merge(out, cfg or {})
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(out, f, indent=2)
+    tmp_path = CONFIG_FILE + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=2)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp_path, CONFIG_FILE)
+    except OSError as e:
+        print(f"[Config] save_cfg error: {e}")

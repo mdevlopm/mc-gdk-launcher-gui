@@ -40,13 +40,12 @@ def msa_refresh(refresh_token: str) -> Optional[dict]:
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        try:
-            return json.loads(e.read().decode())
-        except Exception:
+            res = json.loads(r.read().decode())
+            if isinstance(res, dict) and "access_token" in res:
+                return res
             return None
-    except Exception:
+    except Exception as e:
+        print(f"[PreAuth] MSA refresh failed: {e}")
         return None
 
 
@@ -85,12 +84,21 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
     if priv is None:
         priv = ec.generate_private_key(ec.SECP256R1())
         device_id = "{" + str(_uuid.uuid4()) + "}"
-        with open(key_path, "wb") as f:
-            f.write(priv.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.PKCS8,
-                serialization.NoEncryption()
-            ))
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(key_path, flags, 0o600)
+        try:
+            with open(fd, "wb") as f:
+                f.write(priv.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption()
+                ))
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
         with open(device_id_path, "w") as f:
             f.write(device_id)
 
@@ -107,7 +115,10 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
     }
 
     def _sign_header(method, path, body_bytes):
-        now_ft = int((time.time() + 11644473600) * 1e7)
+        t_float = time.time()
+        t_secs = int(t_float)
+        t_frac = int((t_float - t_secs) * 10000000)
+        now_ft = (t_secs + 11644473600) * 10000000 + t_frac
         ver = (1).to_bytes(4, "big")
         ts = now_ft.to_bytes(8, "big")
         hash_input = (
@@ -128,7 +139,10 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
             self._raw = raw
             self.text = raw.decode("utf-8", "replace")
         def json(self):
-            return json.loads(self._raw)
+            try:
+                return json.loads(self._raw)
+            except Exception:
+                return {}
 
     def _xbl_post(url, body_dict):
         body_bytes = json.dumps(body_dict, separators=(",", ":")).encode()
@@ -171,7 +185,10 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
         print(f"[PreAuth] device.auth HTTP {r.status_code} — {r.text[:200]}")
         return False
     j = r.json()
-    device_token = j["Token"]
+    device_token = j.get("Token")
+    if not device_token:
+        print(f"[PreAuth] Device authenticate response missing 'Token' key.")
+        return False
 
     # ---- 2. /user/authenticate ----
     user_token = None
@@ -309,6 +326,11 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(json.dumps(out, indent=2))
+            f.flush()
+            try:
+                os.fsync(fd)
+            except OSError:
+                pass
         os.replace(tmp, out_path)
     except Exception:
         try:
@@ -384,7 +406,7 @@ def patch_gui_signin_gate(game_dir: str):
     js_files = glob.glob(js_pattern)
     for js_path in js_files:
         try:
-            with open(js_path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(js_path, "rb") as f:
                 data = f.read()
             
             orig = data
@@ -396,26 +418,28 @@ def patch_gui_signin_gate(game_dir: str):
                 "case r3.REALMS:return(TI(a.platform)||xI(a.platform))&&!t.isSignedInPlatformNetwork||!t.isLoggedInWithMicrosoftAccount;"
                 "case r3.SERVERS:case r3.TEMPLATES:default:return!t.isLoggedInWithMicrosoftAccount}}),"
                 "[e],[(0,l.useSharedFacet)(FF),(0,l.useSharedFacet)(_l)])}"
-            )
+            ).encode("utf-8")
+            
             patched_l3 = (
                 "function l3(e){return(0,l.useFacetMap)(((t,a)=>{switch(e){"
                 "case r3.FRIENDS:return!1;"
                 "case r3.REALMS:return!1;"
                 "case r3.SERVERS:case r3.TEMPLATES:default:return!1}}),"
                 "[e],[(0,l.useSharedFacet)(FF),(0,l.useSharedFacet)(_l)])}"
-            )
+            ).encode("utf-8")
             
             # 2. Patch m3() function to allow multiplayer
             target_m3 = (
                 "function m3(){const e=(0,l.useFacetMap)((e=>TI(e.platform)||xI(e.platform)),[],[(0,l.useSharedFacet)(_l)]);"
                 "return(0,l.useFacetMap)(((e,t,a)=>!a&&(!e.isLoggedInWithMicrosoftAccount||e.userPermissions.multiplayer.denyReasons.includes(bF.XboxLive)||t&&!e.hasPremiumNetworkAccess)),"
                 "[],[(0,l.useSharedFacet)(FF),e,n3()])}"
-            )
+            ).encode("utf-8")
+            
             patched_m3 = (
                 "function m3(){const e=(0,l.useFacetMap)((e=>TI(e.platform)||xI(e.platform)),[],[(0,l.useSharedFacet)(_l)]);"
                 "return(0,l.useFacetMap)(((e,t,a)=>!1),"
                 "[],[(0,l.useSharedFacet)(FF),e,n3()])}"
-            )
+            ).encode("utf-8")
             
             if target_l3 in data:
                 data = data.replace(target_l3, patched_l3)
@@ -424,15 +448,16 @@ def patch_gui_signin_gate(game_dir: str):
 
             # 3. Add version-tolerant BedrockOnLinux patches as fallbacks/complements
             # Servers-tab "need a Microsoft account" banner: wB() -> ""
-            needle = 'function wB(){return(0,l.useFacetMap)'
-            if needle in data and 'function wB(){return"";return' not in data:
-                data = data.replace(needle, 'function wB(){return"";return', 1)
+            needle = 'function wB(){return(0,l.useFacetMap)'.encode("utf-8")
+            repl_needle = 'function wB(){return"";return'.encode("utf-8")
+            if needle in data and b'function wB(){return"";return' not in data:
+                data = data.replace(needle, repl_needle, 1)
 
             # Remove the broken in-game "Sign in" button.
-            m = re.search(r'(_NotLoggedInWarning_OreUI`\)\}\),\[[^\]]*\]\);)'
-                          r'(return r\.createElement\(sx,)', data)
-            if m and 'return null;return r.createElement(sx,' not in data:
-                data = data[:m.start()] + m.group(1) + 'return null;' + m.group(2) + data[m.end():]
+            m = re.search(rb'(_NotLoggedInWarning_OreUI`\)\}\),\\[[^\\]]*\\]\);)'
+                          rb'(return r\.createElement\\(sx,)', data)
+            if m and b'return null;return r.createElement(sx,' not in data:
+                data = data[:m.start()] + m.group(1) + b'return null;' + m.group(2) + data[m.end():]
                 
             if data != orig:
                 bak_path = js_path + ".bak"
@@ -441,7 +466,8 @@ def patch_gui_signin_gate(game_dir: str):
                         shutil.copy2(js_path, bak_path)
                     except Exception as e:
                         print(f"[PreAuth] Error creating backup of {js_path}: {e}")
-                with open(js_path, "w", encoding="utf-8") as f:
+                        continue
+                with open(js_path, "wb") as f:
                     f.write(data)
                 print(f"[PreAuth] Patched HBUI sign-in gate in {os.path.basename(js_path)}")
         except Exception as e:
@@ -624,8 +650,16 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
                 shutil.rmtree(tmp_extract, ignore_errors=True)
             os.makedirs(tmp_extract, exist_ok=True)
             try:
+                dest_real = os.path.realpath(tmp_extract)
                 with tarfile.open(archive_path) as t:
-                    t.extractall(tmp_extract)
+                    try:
+                        t.extractall(tmp_extract, filter="tar")
+                    except TypeError:
+                        for m in t.getmembers():
+                            member_path = os.path.realpath(os.path.join(tmp_extract, m.name))
+                            if not (member_path == dest_real or member_path.startswith(dest_real + os.sep)):
+                                raise RuntimeError(f"Güvensiz arşiv yolu: {m.name}")
+                        t.extractall(tmp_extract)
                 
                 os.makedirs(openssl_set_dir, exist_ok=True)
                 src_dir = tmp_extract

@@ -39,12 +39,14 @@ class ProxyTermWindow(Adw.Window):
         self.cwd      = cwd
         self.exe_path = exe_path
         self.on_done  = on_done
+        self._done_called = False
         self.login_method = login_method
         self.proc     = None
         self.target_url = "https://microsoft.com/link"
         self.auth_check_id = None
         self._current_code = ""
         self._stop_native = False
+        self._browser_opened = False
 
         # Content layout using ToolbarView
         toolbar_view = Adw.ToolbarView()
@@ -124,26 +126,58 @@ class ProxyTermWindow(Adw.Window):
 
         self.connect("close-request", self._on_close_req)
 
+        # Delete existing auth/token files to ensure a fresh login is initiated
+        try:
+            import os
+            from mc_launcher.config import DATA_DIR
+            print(f"[ProxyTerm] INIT: cwd={self.cwd}, exe_path={self.exe_path}, login_method={login_method}")
+            if login_method == "ingame":
+                token_file = os.path.join(DATA_DIR, "msa", "token.json")
+                if os.path.isfile(token_file):
+                    print(f"[ProxyTerm] Removing stale native token: {token_file}")
+                    os.remove(token_file)
+                indicator = auth_json_path(self.exe_path)
+                if os.path.isfile(indicator):
+                    print(f"[ProxyTerm] Removing stale native indicator: {indicator}")
+                    os.remove(indicator)
+            else:
+                jar_auth = os.path.join(self.cwd, "auth.json")
+                if os.path.isfile(jar_auth):
+                    print(f"[ProxyTerm] Removing stale ProxyPass auth: {jar_auth}")
+                    os.remove(jar_auth)
+                dest_auth = auth_json_path(self.exe_path)
+                if os.path.isfile(dest_auth):
+                    print(f"[ProxyTerm] Removing stale game auth: {dest_auth}")
+                    os.remove(dest_auth)
+        except Exception as e:
+            print(f"[ProxyTerm] Error clearing old auth files: {e}")
+
         # Start authentication process
         threading.Thread(target=self._run, daemon=True).start()
 
         # Check if auth.json is created periodically
         if self.exe_path:
+            print("[ProxyTerm] Registering auth check timeout")
             self.auth_check_id = GLib.timeout_add(1000, self._check_auth_completed)
 
     def _check_auth_completed(self):
         if not self.exe_path:
+            print("[ProxyTerm] _check_auth_completed: exe_path is empty, removing timeout")
             return GLib.SOURCE_REMOVE
         
         import os
         if self.login_method == "ingame":
-            if auth_json_exists(self.exe_path):
+            exists = auth_json_exists(self.exe_path)
+            print(f"[ProxyTerm] auth check tick (ingame): indicator_exists={exists}")
+            if exists:
                 print("[ProxyTerm] Native auth.json detected, closing login window!")
                 self._kill_and_close()
                 return GLib.SOURCE_REMOVE
         else:
             jar_auth = os.path.join(self.cwd, "auth.json")
-            if os.path.isfile(jar_auth):
+            exists = os.path.isfile(jar_auth)
+            print(f"[ProxyTerm] auth check tick (proxypass): jar_auth={jar_auth} exists={exists}")
+            if exists:
                 print("[ProxyTerm] ProxyPass auth.json detected, copying to game directory and closing!")
                 try:
                     import shutil
@@ -172,7 +206,7 @@ class ProxyTermWindow(Adw.Window):
             # Detect URL and authentication Code
             # ProxyPass typically outputs:
             # "To sign in, use a web browser to open the page https://microsoft.com/link and enter the code XXXXXXXX"
-            url_match = re.search(r"(https?://microsoft\.com/link)", text)
+            url_match = re.search(r"(https?://(?:www\.)?microsoft\.com/link\S*)", text)
             code_match = re.search(r"\b([A-Z0-9]{8})\b", text)
             
             if code_match:
@@ -183,6 +217,22 @@ class ProxyTermWindow(Adw.Window):
                 self.copy_code_btn.set_sensitive(True)
                 if url_match:
                     self.target_url = url_match.group(1)
+                
+                if not getattr(self, "_browser_opened", False):
+                    self._browser_opened = True
+                    def open_browser():
+                        try:
+                            import webbrowser
+                            opened = webbrowser.open(self.target_url)
+                            if not opened:
+                                Gio.AppInfo.launch_default_for_uri(self.target_url, None)
+                        except Exception as e:
+                            print(f"[ProxyTerm] Browser open error: {e}")
+                            try:
+                                Gio.AppInfo.launch_default_for_uri(self.target_url, None)
+                            except Exception as e2:
+                                print(f"[ProxyTerm] Gio.AppInfo launch failed: {e2}")
+                    GLib.idle_add(open_browser)
             return False
         GLib.idle_add(_do)
 
@@ -221,10 +271,9 @@ class ProxyTermWindow(Adw.Window):
                 self._append(raw.decode(errors="replace"))
             self.proc.stdout.close()
             ret = self.proc.wait()
-            self._append(f"\n[Süreç bitti, kod: {ret}]\n")
-            GLib.idle_add(self._on_finish)
+            self._append(_t("term_process_finished", ret=ret))
         except Exception as e:
-            self._append(f"\n[HATA] {e}\n")
+            self._append(_t("term_error", error=str(e)))
 
     def _run_native_flow(self):
         def http_post(url, params):
@@ -264,7 +313,7 @@ class ProxyTermWindow(Adw.Window):
             except Exception as e:
                 return {"error": str(e)}
 
-        self._append("[NATIVE] Microsoft device-code akışı başlatılıyor...\n")
+        self._append(_t("term_native_flow_start"))
         
         # 1. Request device code
         client_id = "0000000048183522"
@@ -277,13 +326,17 @@ class ProxyTermWindow(Adw.Window):
         })
         
         if "device_code" not in res:
-            err_msg = res.get("error_description") or res.get("error") or "Bilinmeyen hata"
-            self._append(f"[HATA] Cihaz kodu alınamadı: {err_msg}\n")
+            err_msg = res.get("error_description") or res.get("error") or _t("term_unknown_error")
+            self._append(_t("term_err_device_code", error=err_msg))
             return
             
         device_code = res["device_code"]
         user_code = res["user_code"]
         verification_uri = res.get("verification_uri", "https://microsoft.com/link")
+        if "?" in verification_uri:
+            verification_uri = f"{verification_uri}&otc={user_code}"
+        else:
+            verification_uri = f"{verification_uri}?otc={user_code}"
         
         self._current_code = user_code
         self.target_url = verification_uri
@@ -295,7 +348,7 @@ class ProxyTermWindow(Adw.Window):
             self.copy_code_btn.set_sensitive(True)
         GLib.idle_add(update_ui)
         
-        self._append(f"[NATIVE] Lütfen tarayıcınızdan {verification_uri} adresine gidin ve şu kodu yazın: {user_code}\n")
+        self._append(_t("term_native_instructions", uri=verification_uri, code=user_code))
         
         # Open verification URI in default browser
         def open_browser():
@@ -333,20 +386,20 @@ class ProxyTermWindow(Adw.Window):
                 interval += 5
                 continue
             elif err:
-                self._append(f"[HATA] Kimlik doğrulama başarısız: {err}\n")
+                self._append(_t("term_err_auth_failed", error=err))
                 break
                 
             if "refresh_token" in token_res:
                 refresh_token = token_res["refresh_token"]
                 access_token = token_res.get("access_token", "")
-                self._append("[NATIVE] Kimlik başarıyla doğrulandı! Refresh token alındı.\n")
-                self._append("[NATIVE] Token Wine kayıt defterine yazılıyor...\n")
+                self._append(_t("term_native_auth_ok"))
+                self._append(_t("term_native_writing_reg"))
                 
                 # Write to registry!
                 ok = self._write_token_to_registry(refresh_token)
                 if ok:
-                    self._append("[NATIVE] Başarıyla Wine kayıt defterine yazıldı!\n")
-                    self._append("[NATIVE] Xbox Live profili çekiliyor...\n")
+                    self._append(_t("term_native_write_reg_ok"))
+                    self._append(_t("term_native_fetching_xbl"))
                     try:
                         from mc_launcher.config import DATA_DIR
                         from mc_launcher.preauth import run_xbl_preauth
@@ -356,12 +409,12 @@ class ProxyTermWindow(Adw.Window):
                     
                     self._save_native_token_indicator(refresh_token)
                 else:
-                    self._append("[HATA] Kayıt defterine yazma başarısız oldu.\n")
+                    self._append(_t("term_err_write_reg_failed"))
                 
                 GLib.idle_add(self._on_finish)
                 return
                 
-        self._append("[NATIVE] Oturum açma süresi doldu veya iptal edildi.\n")
+        self._append(_t("term_native_session_expired"))
 
     def _write_token_to_registry(self, token: str) -> bool:
         from mc_launcher.proton import find_proton
@@ -385,7 +438,7 @@ class ProxyTermWindow(Adw.Window):
         if not proton_bin:
             proton_bin = find_proton("proxypass")
         if not proton_bin:
-            print("[NATIVE] GDK-Proton bulunamadı, kayıt defterine yazılamıyor.")
+            self._append(_t("term_err_proton_missing"))
             return False
             
         env = build_env()
@@ -418,7 +471,8 @@ class ProxyTermWindow(Adw.Window):
             print(f"[NATIVE] Indicator yazma hatası: {e}")
 
     def _on_finish(self):
-        if self.on_done:
+        if self.on_done and not self._done_called:
+            self._done_called = True
             self.on_done()
         self.close()
         return False
@@ -439,7 +493,8 @@ class ProxyTermWindow(Adw.Window):
             self.auth_check_id = None
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
-        if self.on_done:
+        if self.on_done and not self._done_called:
+            self._done_called = True
             self.on_done()
         return False
 

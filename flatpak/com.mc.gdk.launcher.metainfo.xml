@@ -25,9 +25,9 @@
     <category>Game</category>
   </categories>
   <releases>
-    <release version="1.1.0" date="2026-06-17">
+    <release version="2.2" date="2026-06-22">
       <description>
-        <p>GTK4 launcher with ProxyPass, setup wizard and customizable backgrounds.</p>
+        <p>GDK Launcher version 2.2 release with Flatpak Steam integration, PyPI CFFI build compilation and user settings persistence.</p>
       </description>
     </release>
   </releases>

@@ -21,7 +21,15 @@ def build_env(mangohud_on: bool = False) -> dict:
     """Proton çalıştırması için gerekli ortam değişkenlerini hazırlar."""
     steam_root = os.path.expanduser("~/.steam/root")
     if not os.path.isdir(steam_root):
-        steam_root = SCRIPT_DIR
+        flatpak_steam = os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/steam")
+        if os.path.isdir(flatpak_steam):
+            steam_root = flatpak_steam
+        else:
+            flatpak_steam_alt = os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/Steam")
+            if os.path.isdir(flatpak_steam_alt):
+                steam_root = flatpak_steam_alt
+            else:
+                steam_root = SCRIPT_DIR
 
     env = os.environ.copy()
 
@@ -80,7 +88,8 @@ def _kill_wineserver(proton: Optional[str] = None) -> None:
 
     cmds = []
     if proton and os.path.isfile(proton):
-        wineserver_bin = os.path.join(os.path.dirname(proton), "files", "bin", "wineserver")
+        real_proton = os.path.realpath(proton)
+        wineserver_bin = os.path.join(os.path.dirname(real_proton), "files", "bin", "wineserver")
         if os.path.isfile(wineserver_bin):
             cmds.append([wineserver_bin, "-k"])
         cmds.append([proton, "run", "wineserver", "-k"])
@@ -101,11 +110,19 @@ def _kill_wineserver(proton: Optional[str] = None) -> None:
             continue
 
 
-def stop_game(proc, proton: Optional[str] = None, proxy_proc=None) -> None:
+def stop_game(proc_or_result, proton: Optional[str] = None, proxy_proc=None) -> None:
     """
     Oyunu ve ilişkili süreçleri sonlandırır.
     Proton/Wine alt süreç ağacını ve wineserver'ı hedef alır.
     """
+    if isinstance(proc_or_result, dict):
+        proc_or_result["cancelled"] = True
+        proc = proc_or_result.get("game")
+        if not proxy_proc:
+            proxy_proc = proc_or_result.get("proxy")
+    else:
+        proc = proc_or_result
+
     if proxy_proc and proxy_proc.poll() is None:
         try:
             proxy_proc.terminate()
@@ -117,9 +134,10 @@ def stop_game(proc, proton: Optional[str] = None, proxy_proc=None) -> None:
                 pass
 
     # Direct process kill by name (most robust fallback for detached Wine/Proton games)
+    # Use exact name matching (-x) instead of substring (-f) to avoid killing unrelated processes (e.g., text editors, file managers)
     try:
-        subprocess.run(["pkill", "-9", "-f", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-9", "-f", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -181,22 +199,27 @@ def launch_game(
         jar = find_proxypass(exe) or ensure_proxypass(on_status)
         java_bin = ensure_java(on_status)
 
-    result = {"game": None, "proxy": None}
+    result = {"game": None, "proxy": None, "cancelled": False}
 
     def runner():
         proxy_proc = None
         relay = None
         try:
+            if result.get("cancelled"):
+                return
             # Kill leftover wineserver or game processes to prevent registry locks
             try:
-                subprocess.run(["pkill", "-9", "-f", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "-f", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "-f", "ProxyPass.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Use exact name matching (-x) for game processes, and specific pattern for java-proxypass
+                subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pkill", "-9", "-f", "java.*ProxyPass\\.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 _kill_wineserver(proton)
                 time.sleep(1)
             except Exception as e:
                 print(f"[LAUNCH] Leftover cleanup error: {e}")
 
+            if result.get("cancelled"):
+                return
             if login_method == "proxypass":
                 on_status("ProxyPass için temiz oyun dosyaları geri yükleniyor...", "running")
                 try:
@@ -207,6 +230,59 @@ def launch_game(
                 except Exception as e:
                     print(f"[LAUNCH] Hata (dosya geri yükleme): {e}")
 
+                if jar and java_bin:
+                    print(f"[PROXY] Başlatılıyor: {jar}")
+                    proxy_proc = subprocess.Popen(
+                        [
+                            java_bin,
+                            "-Djava.net.preferIPv4Stack=true",
+                            "-XX:+IgnoreUnrecognizedVMOptions",
+                            "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
+                            "-Dio.netty.tryReflectionSetAccessible=true",
+                            "-jar", jar
+                        ],
+                        cwd=os.path.dirname(jar),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        stdin=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+
+                    result["proxy"] = proxy_proc
+                    if result.get("cancelled"):
+                        try:
+                            proxy_proc.terminate()
+                        except OSError:
+                            pass
+                        return
+
+                    def _read_proxy(proc):
+                        try:
+                            for raw in iter(proc.stdout.readline, b""):
+                                line = raw.decode(errors="replace")
+                                if on_proxy_line:
+                                    on_proxy_line(line)
+                        except Exception as e:
+                            print(f"[PROXY] Log okuma hatası: {e}")
+                        finally:
+                            if proc.stdout:
+                                proc.stdout.close()
+
+                    threading.Thread(target=_read_proxy, args=(proxy_proc,), daemon=True).start()
+                    time.sleep(2)
+                else:
+                    missing = []
+                    if not jar:
+                        missing.append("ProxyPass.jar")
+                    if not java_bin:
+                        missing.append("Java Runtime")
+                    print(f"[PROXY] Atlanıyor (eksik bileşenler: {', '.join(missing)})")
+
+            if result.get("cancelled"):
+                return
             if login_method == "ingame":
                 import json
                 from mc_launcher.config import DATA_DIR
@@ -241,7 +317,7 @@ def launch_game(
                 if fresh and fresh.get("refresh_token"):
                     tok = fresh["refresh_token"]
                     try:
-                        os.makedirs(os.path.dirname(token_file), exist_ok=True)
+                        os.path.dirname(token_file) and os.makedirs(os.path.dirname(token_file), exist_ok=True)
                         with open(token_file, "w") as f:
                             json.dump({"refresh_token": tok, "obtained": int(time.time())}, f, indent=2)
                         print("[LAUNCH] Token başarıyla yenilendi ve kaydedildi.")
@@ -308,52 +384,6 @@ def launch_game(
                 except Exception as e:
                     print(f"[LAUNCH] GUI yamalama hatası: {e}")
 
-
-                if jar and java_bin:
-                    print(f"[PROXY] Başlatılıyor: {jar}")
-                    proxy_proc = subprocess.Popen(
-                        [
-                            java_bin,
-                            "-Djava.net.preferIPv4Stack=true",
-                            "-XX:+IgnoreUnrecognizedVMOptions",
-                            "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.nio=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
-                            "-Dio.netty.tryReflectionSetAccessible=true",
-                            "-jar", jar
-                        ],
-                        cwd=os.path.dirname(jar),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        stdin=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-
-                    result["proxy"] = proxy_proc
-
-                    def _read_proxy(proc):
-                        try:
-                            for raw in iter(proc.stdout.readline, b""):
-                                line = raw.decode(errors="replace")
-                                if on_proxy_line:
-                                    on_proxy_line(line)
-                        except Exception as e:
-                            print(f"[PROXY] Log okuma hatası: {e}")
-                        finally:
-                            if proc.stdout:
-                                proc.stdout.close()
-
-                    threading.Thread(target=_read_proxy, args=(proxy_proc,), daemon=True).start()
-                    time.sleep(2)
-                else:
-                    missing = []
-                    if not jar:
-                        missing.append("ProxyPass.jar")
-                    if not java_bin:
-                        missing.append("Java Runtime")
-                    print(f"[PROXY] Atlanıyor (eksik bileşenler: {', '.join(missing)})")
-
             # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyoruz.
             # Ancak ProxyPass modunda ağ yalıtımı sorunları olmaması için sadece 'ingame' modunda kullanıyoruz.
             umu_run = ensure_umu(on_status) if login_method == "ingame" else None
@@ -376,8 +406,10 @@ def launch_game(
                 disp = os.environ.get("DISPLAY")
                 if disp:
                     env["DISPLAY"] = disp
-                    for cand in (os.environ.get("XAUTHORITY"), os.path.expanduser("~/.Xauthority"),
-                                 f"/run/user/{os.getuid()}/.mutter-Xwaylandauth.0"):
+                    import glob
+                    mutter_cands = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth.*")
+                    candidates = [os.environ.get("XAUTHORITY"), os.path.expanduser("~/.Xauthority")] + mutter_cands
+                    for cand in candidates:
                         if cand and os.path.exists(cand):
                             env["XAUTHORITY"] = cand
                             break
@@ -387,7 +419,7 @@ def launch_game(
                         user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
                         for arg in (f"+SI:localuser:{user}", "+local:"):
                             try:
-                                subprocess.run(["xhost", arg], timeout=2,
+                                subprocess.run(["xhost", arg], env=env, timeout=2,
                                                stdout=subprocess.DEVNULL,
                                                stderr=subprocess.DEVNULL)
                             except Exception:
@@ -415,6 +447,18 @@ def launch_game(
                 else:
                     cmd = [proton, "run", exe]
 
+            if result.get("cancelled"):
+                if proxy_proc and proxy_proc.poll() is None:
+                    try:
+                        proxy_proc.terminate()
+                        proxy_proc.wait(timeout=2)
+                    except Exception:
+                        try:
+                            proxy_proc.kill()
+                        except Exception:
+                            pass
+                return
+
             print(f"[LAUNCH] {' '.join(cmd)}")
             proc = subprocess.Popen(
                 cmd,
@@ -425,6 +469,17 @@ def launch_game(
                 start_new_session=True,
             )
             result["game"] = proc
+            if result.get("cancelled"):
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+                if proxy_proc and proxy_proc.poll() is None:
+                    try:
+                        proxy_proc.terminate()
+                    except OSError:
+                        pass
+                return
             if on_started:
                 on_started(proc, proxy_proc)
 
@@ -524,18 +579,37 @@ def patch_options(key: str, value: str) -> Optional[bool]:
     path = options_txt_path()
     if not os.path.isfile(path):
         return None
-    with open(path, encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
-    new_lines = []
-    found = False
-    for line in lines:
-        if line.startswith(key + ":"):
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if line.startswith(key + ":"):
+                new_lines.append(f"{key}:{value}\n")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
             new_lines.append(f"{key}:{value}\n")
-            found = True
-        else:
-            new_lines.append(line)
-    if not found:
-        new_lines.append(f"{key}:{value}\n")
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(new_lines)
-    return True
+        tmp_path = path + ".tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+            os.replace(tmp_path, path)
+            return True
+        except OSError as e:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            raise
+    except OSError as e:
+        print(f"[LAUNCH] options.txt patch error: {e}")
+        return False

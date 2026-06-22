@@ -480,6 +480,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             self.main_stack.set_visible_child_name("launcher")
 
         self.connect("close-request", self._on_close)
+        self.connect("destroy", self._on_destroy)
 
         # Keep maximize button icon in sync with window state
         self.connect("notify::maximized", lambda *_: self._update_wm_max_icon())
@@ -572,7 +573,11 @@ class LauncherWindow(Adw.ApplicationWindow):
         for k, v in vars_dict.items():
             var_lines.append(f"    --{k}: {v};")
         vars_block = "window {\n" + "\n".join(var_lines) + "\n}\n"
-        self._css_provider.load_from_data(vars_block + CSS_DATA)
+        css_text = vars_block + CSS_DATA
+        if hasattr(self._css_provider, 'load_from_string'):
+            self._css_provider.load_from_string(css_text)
+        else:
+            self._css_provider.load_from_data(css_text.encode('utf-8'))
 
     # ── ONBOARDING WIZARD UI ───────────────────────────────────────────────────
     def _build_wizard_ui(self):
@@ -1895,11 +1900,11 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.settings_lang_lbl.set_hexpand(True)
         lang_row.append(self.settings_lang_lbl)
 
-        self._lang_ids = ["tr", "en", "de"]
+        self._lang_ids = ["tr", "en", "de", "zh"]
         lang_labels = Gtk.StringList.new([_t(f"lang_{lid}") for lid in self._lang_ids])
         self.settings_lang_dropdown = Gtk.DropDown(model=lang_labels)
         self.settings_lang_dropdown.set_valign(Gtk.Align.CENTER)
-        current_lang_code = self._language if self._language in self._lang_ids else "tr"
+        current_lang_code = self._language if self._language in self._lang_ids else "en"
         self._updating_lang_dropdown = True
         try:
             self.settings_lang_dropdown.set_selected(self._lang_ids.index(current_lang_code))
@@ -2188,7 +2193,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         about_page_widget.add(info_group)
         self.about_info_group = info_group
 
-        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.0")
+        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.2")
         info_group.add(ver_row)
         self.about_ver_row = ver_row
 
@@ -2771,7 +2776,7 @@ class LauncherWindow(Adw.ApplicationWindow):
     def _build_settings_menu(self):
         root = Gio.Menu()
         lang_menu = Gio.Menu()
-        for c in ("tr", "en", "de"):
+        for c in ("tr", "en", "de", "zh"):
             item = Gio.MenuItem.new(_t(f"lang_{c}"), None)
             item.set_action_and_target_value("win.language", GLib.Variant("s", c))
             lang_menu.append_item(item)
@@ -2781,7 +2786,7 @@ class LauncherWindow(Adw.ApplicationWindow):
 
         # Create simple menu trigger action
         if not hasattr(self, "_lang_action_connected"):
-            code = self._language if self._language in ("tr", "en", "de") else "tr"
+            code = self._language if self._language in ("tr", "en", "de", "zh") else "en"
             self._lang_action = Gio.SimpleAction.new_stateful(
                 "language",
                 GLib.VariantType.new("s"),
@@ -2835,7 +2840,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._updating_lang_dropdown = True
         try:
             selected = self.settings_lang_dropdown.get_selected()
-            lang_id = self._lang_ids[selected] if 0 <= selected < len(self._lang_ids) else "tr"
+            lang_id = self._lang_ids[selected] if 0 <= selected < len(self._lang_ids) else "en"
             labels = Gtk.StringList.new([_t(f"lang_{lid}") for lid in self._lang_ids])
             self.settings_lang_dropdown.set_model(labels)
             idx = self._lang_ids.index(lang_id) if lang_id in self._lang_ids else 0
@@ -2911,7 +2916,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self._set_status(_t("status_stopping"))
 
         def worker():
-            stop_game(game, proton=proton, proxy_proc=proxy)
+            stop_game(self._game_procs, proton=proton, proxy_proc=proxy)
 
             def done():
                 self._game_procs = {}
@@ -2970,15 +2975,16 @@ class LauncherWindow(Adw.ApplicationWindow):
         def on_finished():
             if self._game_stopping:
                 return
-            self._game_procs = {}
-            self._proxy_proc = None
-            self._launch_proton = None
-            GLib.idle_add(lambda: (
-                self._reset_play_button() or False
-            ))
-            GLib.idle_add(self._refresh_all_states)
+            def update():
+                self._game_procs = {}
+                self._proxy_proc = None
+                self._launch_proton = None
+                self._reset_play_button()
+                self._refresh_all_states()
+                return False
+            GLib.idle_add(update)
 
-        launch_game(
+        self._game_procs = launch_game(
             proton=proton,
             exe=exe,
             mangohud_on=self._mangohud_on,
@@ -3020,7 +3026,15 @@ class LauncherWindow(Adw.ApplicationWindow):
         _os.makedirs(COMPAT_DATA, exist_ok=True)
         steam_root = _os.path.expanduser("~/.steam/root")
         if not _os.path.isdir(steam_root):
-            steam_root = _SD
+            flatpak_steam = _os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/steam")
+            if _os.path.isdir(flatpak_steam):
+                steam_root = flatpak_steam
+            else:
+                flatpak_steam_alt = _os.path.expanduser("~/.var/app/com.valvesoftware.Steam/data/Steam")
+                if _os.path.isdir(flatpak_steam_alt):
+                    steam_root = flatpak_steam_alt
+                else:
+                    steam_root = _SD
         env = _os.environ.copy()
         env.update({
             "STEAM_COMPAT_CLIENT_INSTALL_PATH": steam_root,
@@ -3176,11 +3190,32 @@ class LauncherWindow(Adw.ApplicationWindow):
             ProxyTermWindow("", "", exe_path=exe, parent=self, on_done=self._refresh_all_states, login_method="ingame").present()
             return
 
-        jar = find_proxypass(exe) or ensure_proxypass(self._set_status)
-        if not jar:
-            self._show_error(_t("err_title"), _t("status_jar_not_found"))
-            return
-        ProxyTermWindow(jar, os.path.dirname(jar), exe_path=exe, parent=self, on_done=self._refresh_all_states).present()
+        jar = find_proxypass(exe)
+        if jar:
+            ProxyTermWindow(jar, os.path.dirname(jar), exe_path=exe, parent=self, on_done=self._refresh_all_states).present()
+        else:
+            def worker():
+                def thread_status(msg, style="running"):
+                    GLib.idle_add(self._set_status, msg, style)
+                GLib.idle_add(self.proxy_login_btn.set_sensitive, False)
+                try:
+                    downloaded_jar = ensure_proxypass(thread_status)
+                    if downloaded_jar:
+                        def launch_win():
+                            ProxyTermWindow(downloaded_jar, os.path.dirname(downloaded_jar), exe_path=exe, parent=self, on_done=self._refresh_all_states).present()
+                            self.proxy_login_btn.set_sensitive(True)
+                        GLib.idle_add(launch_win)
+                    else:
+                        def show_err():
+                            self._show_error(_t("err_title"), _t("status_jar_not_found"))
+                            self.proxy_login_btn.set_sensitive(True)
+                        GLib.idle_add(show_err)
+                except Exception as e:
+                    def handle_exc():
+                        self._show_error(_t("err_title"), f"Error downloading ProxyPass: {e}")
+                        self.proxy_login_btn.set_sensitive(True)
+                    GLib.idle_add(handle_exc)
+            threading.Thread(target=worker, daemon=True).start()
 
     def _on_show_proxy_log(self, _):
         from mc_launcher.ui.proxy_windows import ProxyLogWindow
@@ -3570,72 +3605,63 @@ class LauncherWindow(Adw.ApplicationWindow):
             {
                 "name": "SkyBlock Bedrock Map",
                 "type": "world",
-                "badge": "World / Map",
-                "desc": "The classic SkyBlock survival map adapted for Minecraft Bedrock Edition.",
+                "desc_key": "store_desc_skyblock",
                 "url": "https://github.com/kirbycope/SkyBlock-Bedrock/raw/main/SkyBlock-Bedrock.mcworld",
                 "icon": "input-gaming-symbolic"
             },
             {
                 "name": "Attachables Resource Pack",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "Official Mojang example demonstrating custom attachable items on Bedrock Edition.",
+                "desc_key": "store_desc_attachables",
                 "url": "https://github.com/Bedrock-OSS/bedrock-examples/releases/download/download/attachable-example.mcpack",
                 "icon": "image-missing-symbolic"
             },
             {
                 "name": "Server Teleport Helper",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "Custom server interface helper resources for Bedrock Server Teleportation.",
+                "desc_key": "store_desc_teleport",
                 "url": "https://github.com/lZiMUl/MineCraft-Server-Teleport/releases/download/1.4.1/MineCraft.Server.Teleport.mcpack",
                 "icon": "network-transmit-receive-symbolic"
             },
             {
                 "name": "No Fog Resource Pack",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "Nether'daki sisi azaltarak daha net bir görüş sağlar.",
+                "desc_key": "store_desc_nofog",
                 "url": "https://github.com/Minecraft-Bedrock-Packs/no-fog-resource-pack/releases/download/v1.0.0/nofog.mcpack",
                 "icon": "weather-clear-symbolic"
             },
             {
                 "name": "Bedrock Technical Resource Pack",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "Teknik oyuncular için spawn göstergeleri, slime chunk ve daha fazlası.",
+                "desc_key": "store_desc_technical",
                 "url": "https://github.com/RavinMaddHatter/Bedrock-Technical-Resource-Pack/releases/latest/download/Bedrock-Technical-Resource-Pack.mcpack",
                 "icon": "applications-engineering-symbolic"
             },
             {
                 "name": "One Chunk Bedrock",
                 "type": "world",
-                "badge": "World / Map",
-                "desc": "Tüm oyun tek bir 16x16 chunk içinde.",
+                "desc_key": "store_desc_onechunk",
                 "url": "https://github.com/kirbycope/one-chunk-bedrock/raw/main/one-chunk-bedrock.mcworld",
                 "icon": "applications-games-symbolic"
             },
             {
                 "name": "Void World Behavior Pack",
                 "type": "behavior_pack",
-                "badge": "Behavior Pack",
-                "desc": "Overworld, Nether ve End'de boşluk dünyası oluşturur. Harita yapımcıları için ideal.",
+                "desc_key": "store_desc_void",
                 "url": "https://github.com/Minecraft-Bedrock-Packs/void-world-behavior-pack/releases/download/v1.0.0/void.mcpack",
                 "icon": "weather-clear-night-symbolic"
             },
             {
                 "name": "PvP Texture Pack",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "PvP odaklı sade ve temiz texture pack.",
+                "desc_key": "store_desc_pvp",
                 "url": "https://github.com/WaddleDeveloper7/PvPTexturePack/releases/latest/download/PvPTexturePack.mcpack",
                 "icon": "applications-games-symbolic"
             },
             {
                 "name": "HD PBR Resource Pack",
                 "type": "resource_pack",
-                "badge": "Resource Pack",
-                "desc": "Java ve Bedrock ile uyumlu HD PBR texture pack.",
+                "desc_key": "store_desc_hdpbr",
                 "url": "https://github.com/jasonjgardner/jg-rtx/releases/latest/download/jg-rtx.mcpack",
                 "icon": "applications-multimedia-symbolic"
             }
@@ -3656,14 +3682,18 @@ class LauncherWindow(Adw.ApplicationWindow):
             badge_box = Gtk.Box()
             badge_box.add_css_class("badge")
             # Style badge based on type
-            if item["type"] == "world":
+            btype = item["type"]
+            if btype == "world":
                 badge_box.add_css_class("badge-world")
-            elif item["type"] == "resource_pack":
+                badge_key = "store_badge_world"
+            elif btype == "resource_pack":
                 badge_box.add_css_class("badge-resource")
+                badge_key = "store_badge_resource"
             else:
                 badge_box.add_css_class("badge-behavior")
+                badge_key = "store_badge_behavior"
                 
-            badge_lbl = Gtk.Label(label=item["badge"])
+            badge_lbl = Gtk.Label(label=_t(badge_key))
             badge_lbl.add_css_class("badge-text")
             badge_box.append(badge_lbl)
             header.append(badge_box)
@@ -3677,7 +3707,7 @@ class LauncherWindow(Adw.ApplicationWindow):
             card.append(title)
             
             # Description
-            desc = Gtk.Label(label=item["desc"])
+            desc = Gtk.Label(label=_t(item["desc_key"]))
             desc.add_css_class("store-card-desc")
             desc.set_halign(Gtk.Align.START)
             desc.set_wrap(True)
@@ -3845,11 +3875,37 @@ class LauncherWindow(Adw.ApplicationWindow):
 
     # Window close handler
     def _on_close(self, _):
+        save_cfg(self.cfg)
         if self._is_game_running():
             game = self._game_procs.get("game")
             proxy = self._game_procs.get("proxy")
-            stop_game(game, proton=self._launch_proton or find_proton(self.cfg.get("login_method", "proxypass")), proxy_proc=proxy)
+            
+            def _stop_and_destroy():
+                try:
+                    stop_game(
+                        self._game_procs,
+                        proton=self._launch_proton or find_proton(self.cfg.get("login_method", "proxypass")),
+                        proxy_proc=proxy
+                    )
+                except Exception as e:
+                    print(f"[Launcher] stop_game error during close: {e}")
+                finally:
+                    GLib.idle_add(self.destroy)
+            
+            threading.Thread(target=_stop_and_destroy, daemon=True).start()
+            return True  # Prevent default close, we will call destroy when done
+            
         elif self._proxy_proc and self._proxy_proc.poll() is None:
             self._proxy_proc.terminate()
-        save_cfg(self.cfg)
+            
         return False
+
+    def _on_destroy(self, _):
+        if hasattr(self, "_css_provider"):
+            try:
+                Gtk.StyleContext.remove_provider_for_display(
+                    Gdk.Display.get_default(),
+                    self._css_provider
+                )
+            except Exception as e:
+                print(f"[Launcher] CSS provider removal error: {e}")
