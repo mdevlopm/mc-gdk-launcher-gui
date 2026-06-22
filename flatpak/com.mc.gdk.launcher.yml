@@ -2,6 +2,20 @@ app-id: com.mc.gdk.launcher
 runtime: org.gnome.Platform
 runtime-version: '47'
 sdk: org.gnome.Sdk
+
+add-extensions:
+  org.freedesktop.Platform.Compat.i386:
+    directory: lib/i386-linux-gnu
+    version: '24.08'
+  org.freedesktop.Platform.GL32:
+    directory: lib/i386-linux-gnu/GL
+    version: '1.4'
+    versions: 24.08;1.4
+    subdirectories: true
+    no-autodownload: true
+    autodelete: false
+    add-ld-path: lib
+
 command: mc-gdk-launcher
 
 finish-args:
