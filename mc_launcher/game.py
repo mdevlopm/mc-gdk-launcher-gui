@@ -229,10 +229,11 @@ def launch_game(
             if login_method == "proxypass":
                 on_status("ProxyPass için temiz oyun dosyaları geri yükleniyor...", "running")
                 try:
-                    from mc_launcher.preauth import restore_vanilla_state, wine_disable_winegdk_preauth
+                    from mc_launcher.preauth import restore_vanilla_state, wine_disable_winegdk_preauth, hide_signin_button
                     pfx = os.path.join(COMPAT_DATA, "pfx")
                     restore_vanilla_state(os.path.dirname(exe), pfx)
                     wine_disable_winegdk_preauth(proton, pfx, env)
+                    hide_signin_button(os.path.dirname(exe))
                 except Exception as e:
                     print(f"[LAUNCH] Hata (dosya geri yükleme): {e}")
 

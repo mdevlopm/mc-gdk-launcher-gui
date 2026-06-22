@@ -2943,6 +2943,12 @@ class LauncherWindow(Adw.ApplicationWindow):
             self._show_error(_t("err_proton_none"), _t("err_proton_msg"))
             return
 
+        login_method = self.cfg.get("login_method", "proxypass")
+        if login_method == "proxypass" and not auth_json_exists(exe):
+            self._show_error(_t("err_title"), _t("label_auth_required", "Please sign in first!"))
+            self._on_proxy_login(None)
+            return
+
         os.makedirs(COMPAT_DATA, exist_ok=True)
         self._launch_proton = proton
         self._game_stopping = False
