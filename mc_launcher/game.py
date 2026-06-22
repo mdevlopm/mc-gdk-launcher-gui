@@ -33,11 +33,11 @@ def build_env(mangohud_on: bool = False) -> dict:
 
     env = os.environ.copy()
 
-    # Farenin algılanamaması sorununun kök nedeni, Wayland ortamında Wine'ın XWayland'e zorlanmasıdır.
-    # XWayland, "Raw Input" (GameInput) yakalamasında sıklıkla sorun yaratır.
-    # Çözüm olarak Proton'un DOĞRUDAN yerel Wayland sürücüsünü kullanmasını sağlıyoruz:
-    env["PROTON_ENABLE_WAYLAND"] = "1"
-
+    # Wayland + NVIDIA EGL sorunlarını aşmak için WAYLAND_DISPLAY değişkenini gizleyip
+    # oyunun XWayland (X11) modunda başlamasını sağlıyoruz. Ayrıca fare algılama sorunları için SDL'i X11'e zorluyoruz.
+    env.pop("WAYLAND_DISPLAY", None)
+    env["SDL_VIDEODRIVER"] = "x11"
+    env["GDK_BACKEND"] = "x11"
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
     # VR DLL kütüphanelerini devre dışı bırakıyoruz.
