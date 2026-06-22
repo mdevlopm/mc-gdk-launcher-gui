@@ -49,7 +49,7 @@ def build_env(mangohud_on: bool = False) -> dict:
         "PROTON_NO_ESYNC"                 : "0",
         "PROTON_NO_FSYNC"                 : "0",
         "WINEDLLOVERRIDES"                : dll_overrides,
-        "WINE_FULLSCREEN_INTEGER_SCALING" : "1",
+        "WINE_FULLSCREEN_INTEGER_SCALING" : "0",
         "PROTON_USE_WINED3D"              : "0",
     })
     if mangohud_on:
@@ -402,9 +402,8 @@ def launch_game(
                 # GDK-Proton'un Wayland altında düzgün çalışması ve pressure-vessel'in
                 # ekran kartı sürücülerini (özellikle NVIDIA) container içine doğru şekilde mount edebilmesi için
                 # WAYLAND_DISPLAY değişkenini ve X11 bağlantı yetkilerini geri yüklüyoruz.
-                # NOT: Farenin algılanmama sorununu (mouse input grab) çözmek için WAYLAND_DISPLAY geri yüklemesini IPTAL ETTİK.
-                # if "WAYLAND_DISPLAY" in os.environ:
-                #     env["WAYLAND_DISPLAY"] = os.environ["WAYLAND_DISPLAY"]
+                if "WAYLAND_DISPLAY" in os.environ:
+                    env["WAYLAND_DISPLAY"] = os.environ["WAYLAND_DISPLAY"]
                 
                 disp = os.environ.get("DISPLAY")
                 if disp:
