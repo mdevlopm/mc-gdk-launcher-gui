@@ -454,8 +454,8 @@ def patch_gui_signin_gate(game_dir: str):
                 data = data.replace(needle, repl_needle, 1)
 
             # Remove the broken in-game "Sign in" button.
-            m = re.search(rb'(_NotLoggedInWarning_OreUI`\)\}\),\\[[^\\]]*\\]\);)'
-                          rb'(return r\.createElement\\(sx,)', data)
+            m = re.search(rb'(_NotLoggedInWarning_OreUI`\)\}\),\[[^\]]*\]\);)'
+                          rb'(return r\.createElement\(sx,)', data)
             if m and b'return null;return r.createElement(sx,' not in data:
                 data = data[:m.start()] + m.group(1) + b'return null;' + m.group(2) + data[m.end():]
                 

@@ -34,8 +34,9 @@ def build_env(mangohud_on: bool = False) -> dict:
     env = os.environ.copy()
 
     # Wayland + NVIDIA EGL sorunlarını aşmak için WAYLAND_DISPLAY değişkenini gizleyip
-    # oyunun XWayland (X11) modunda başlamasını sağlıyoruz.
+    # oyunun XWayland (X11) modunda başlamasını sağlıyoruz. Ayrıca fare algılama sorunları için SDL'i X11'e zorluyoruz.
     env.pop("WAYLAND_DISPLAY", None)
+    env["SDL_VIDEODRIVER"] = "x11"
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
     # VR DLL kütüphanelerini devre dışı bırakıyoruz.
