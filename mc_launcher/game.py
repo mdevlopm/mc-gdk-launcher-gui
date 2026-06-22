@@ -37,6 +37,7 @@ def build_env(mangohud_on: bool = False) -> dict:
     # oyunun XWayland (X11) modunda başlamasını sağlıyoruz. Ayrıca fare algılama sorunları için SDL'i X11'e zorluyoruz.
     env.pop("WAYLAND_DISPLAY", None)
     env["SDL_VIDEODRIVER"] = "x11"
+    env["GDK_BACKEND"] = "x11"
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
     # VR DLL kütüphanelerini devre dışı bırakıyoruz.
@@ -48,7 +49,7 @@ def build_env(mangohud_on: bool = False) -> dict:
         "PROTON_NO_ESYNC"                 : "0",
         "PROTON_NO_FSYNC"                 : "0",
         "WINEDLLOVERRIDES"                : dll_overrides,
-        "WINE_FULLSCREEN_INTEGER_SCALING" : "0",
+        "WINE_FULLSCREEN_INTEGER_SCALING" : "1",
         "PROTON_USE_WINED3D"              : "0",
     })
     if mangohud_on:
@@ -401,8 +402,9 @@ def launch_game(
                 # GDK-Proton'un Wayland altında düzgün çalışması ve pressure-vessel'in
                 # ekran kartı sürücülerini (özellikle NVIDIA) container içine doğru şekilde mount edebilmesi için
                 # WAYLAND_DISPLAY değişkenini ve X11 bağlantı yetkilerini geri yüklüyoruz.
-                if "WAYLAND_DISPLAY" in os.environ:
-                    env["WAYLAND_DISPLAY"] = os.environ["WAYLAND_DISPLAY"]
+                # NOT: Farenin algılanmama sorununu (mouse input grab) çözmek için WAYLAND_DISPLAY geri yüklemesini IPTAL ETTİK.
+                # if "WAYLAND_DISPLAY" in os.environ:
+                #     env["WAYLAND_DISPLAY"] = os.environ["WAYLAND_DISPLAY"]
                 
                 disp = os.environ.get("DISPLAY")
                 if disp:
