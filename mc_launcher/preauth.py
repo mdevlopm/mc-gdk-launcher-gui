@@ -348,8 +348,10 @@ def wine_apply_winegdk_prereqs(proton_bin: str, pfx_path: str, env: dict):
     env_copy = env.copy()
     env_copy["WINEPREFIX"] = pfx_path
 
+    from mc_launcher.flatpak import wrap_flatpak_cmd
     def _regadd(*args):
         cmd = [proton_bin, "run", "reg", "add"] + list(args) + ["/f"]
+        cmd = wrap_flatpak_cmd(cmd, env_copy)
         try:
             subprocess.run(cmd, env=env_copy, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         except Exception as e:
@@ -378,6 +380,7 @@ def wine_reg_set_refresh_token(proton_bin: str, pfx_path: str, env: dict, token:
     env_copy = env.copy()
     env_copy["WINEPREFIX"] = pfx_path
 
+    from mc_launcher.flatpak import wrap_flatpak_cmd
     for root in ["HKLM", "HKCU"]:
         cmd = [
             proton_bin, "run", "reg", "add",
@@ -387,6 +390,7 @@ def wine_reg_set_refresh_token(proton_bin: str, pfx_path: str, env: dict, token:
             "/d", token,
             "/f"
         ]
+        cmd = wrap_flatpak_cmd(cmd, env_copy)
         try:
             subprocess.run(cmd, env=env_copy, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         except Exception as e:
@@ -852,8 +856,10 @@ def wine_disable_winegdk_preauth(proton_bin: str, pfx_path: str, env: dict):
     env_copy = env.copy()
     env_copy["WINEPREFIX"] = pfx_path
 
+    from mc_launcher.flatpak import wrap_flatpak_cmd
     def _regdelete(key, val):
         cmd = [proton_bin, "run", "reg", "delete", key, "/v", val, "/f"]
+        cmd = wrap_flatpak_cmd(cmd, env_copy)
         try:
             subprocess.run(cmd, env=env_copy, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
             print(f"[Restore] Deleted registry key: {key} \\ {val}")

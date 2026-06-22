@@ -55,6 +55,9 @@ def build_env(mangohud_on: bool = False) -> dict:
         "PROTON_USE_WINED3D"              : "0",
         "SDL_MOUSEDRIVER"                 : "x11",
         "SDL_VIDEO_X11_DGAMOUSE"          : "0",
+        "SteamAppId"                      : "0",
+        "SteamGameId"                     : "0",
+        "PROTON_LOG"                      : "1",
     })
     if mangohud_on:
         env["MANGOHUD"]        = "1"
@@ -101,7 +104,9 @@ def _kill_wineserver(proton: Optional[str] = None) -> None:
         cmds.append([proton, "run", "wineserver", "-k"])
     cmds.append(["wineserver", "-k"])
 
+    from mc_launcher.flatpak import wrap_flatpak_cmd
     for cmd in cmds:
+        cmd = wrap_flatpak_cmd(cmd, env)
         try:
             res = subprocess.run(
                 cmd,
@@ -426,7 +431,9 @@ def launch_game(
                         user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
                         for arg in (f"+SI:localuser:{user}", "+local:"):
                             try:
-                                subprocess.run(["xhost", arg], env=env, timeout=2,
+                                from mc_launcher.flatpak import wrap_flatpak_cmd
+                                xcmd = wrap_flatpak_cmd(["xhost", arg], env)
+                                subprocess.run(xcmd, env=env, timeout=2,
                                                stdout=subprocess.DEVNULL,
                                                stderr=subprocess.DEVNULL)
                             except Exception:
@@ -473,6 +480,8 @@ def launch_game(
             except Exception as e:
                 print(f"[LAUNCH] GameInput yükleme hatası: {e}")
 
+            from mc_launcher.flatpak import wrap_flatpak_cmd
+            cmd = wrap_flatpak_cmd(cmd, env, cwd=os.path.dirname(exe))
             print(f"[LAUNCH] {' '.join(cmd)}")
             proc = subprocess.Popen(
                 cmd,
