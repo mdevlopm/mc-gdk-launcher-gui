@@ -386,9 +386,9 @@ def launch_game(
                 except Exception as e:
                     print(f"[LAUNCH] GUI yamalama hatası: {e}")
 
-            # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyoruz.
-            # Ancak ProxyPass modunda ağ yalıtımı sorunları olmaması için sadece 'ingame' modunda kullanıyoruz.
-            umu_run = ensure_umu(on_status) if login_method == "ingame" else None
+            # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyorduk.
+            # Ancak pressure-vessel (umu-run) fare algılamasını (GameInput raw mouse) bozduğu için geçici olarak UMU kullanımını devre dışı bırakıyoruz.
+            umu_run = None
             if umu_run:
                 # steamrt3 runtime'ının yüklü olup olmadığını kontrol edip, eksikse otomatik indirmeyi aktif ediyoruz.
                 xdg_data = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
