@@ -1,6 +1,6 @@
 app-id: com.mc.gdk.launcher
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '47'
 sdk: org.gnome.Sdk
 command: mc-gdk-launcher
 
@@ -16,6 +16,11 @@ finish-args:
   - --socket=pulseaudio
   # Oyun dosyası seçimi, Wine prefix, indirilen bileşenler
   - --filesystem=home
+  # Harici diskler ve SSD'ler için izinler
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+  # Gamepad ve diğer donanımlar için cihaz erişimi
+  - --device=all
   # Steam Proton uyumluluk yolları (salt okunur)
   - --filesystem=~/.steam:ro
   - --filesystem=~/.local/share/Steam:ro

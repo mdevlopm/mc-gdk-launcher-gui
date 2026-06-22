@@ -13,6 +13,7 @@ from mc_launcher.i18n import _t
 
 def find_all_mojang_dirs() -> List[str]:
     """Wine prefix içindeki com.mojang klasörlerinin yollarını döner."""
+    import os
     from mc_launcher.config import COMPAT_DATA
     drive_c = os.path.join(COMPAT_DATA, "pfx", "drive_c")
     if not os.path.isdir(drive_c):
