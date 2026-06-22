@@ -15,6 +15,8 @@ from mc_launcher.config import SCRIPT_DIR, COMPAT_DATA
 from mc_launcher.proxypass import find_proxypass, ensure_proxypass
 from mc_launcher.java_rt import ensure_java
 from mc_launcher.proton import ensure_umu
+from mc_launcher.gameinput import install_gameinput
+from pathlib import Path
 
 
 def build_env(mangohud_on: bool = False) -> dict:
@@ -462,6 +464,13 @@ def launch_game(
                         except Exception:
                             pass
                 return
+
+            prefix_dir = Path(os.path.join(COMPAT_DATA, "pfx"))
+            game_dir = Path(os.path.dirname(exe))
+            try:
+                install_gameinput(prefix_dir, game_dir)
+            except Exception as e:
+                print(f"[LAUNCH] GameInput yükleme hatası: {e}")
 
             print(f"[LAUNCH] {' '.join(cmd)}")
             proc = subprocess.Popen(
