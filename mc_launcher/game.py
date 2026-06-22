@@ -41,7 +41,7 @@ def build_env(mangohud_on: bool = False) -> dict:
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
     # VR DLL kütüphanelerini devre dışı bırakıyoruz.
-    dll_overrides = "d3d12=n;dxgi=n;vrclient=;vrclient_x64=;openvr_api=;wineopenxr="
+    dll_overrides = "d3d12=n;dxgi=n;vrclient=;vrclient_x64=;openvr_api=;wineopenxr=;winedbg.exe=d;winedbg=d"
 
     env.update({
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": steam_root,
@@ -51,6 +51,8 @@ def build_env(mangohud_on: bool = False) -> dict:
         "WINEDLLOVERRIDES"                : dll_overrides,
         "WINE_FULLSCREEN_INTEGER_SCALING" : "0",
         "PROTON_USE_WINED3D"              : "0",
+        "SDL_MOUSEDRIVER"                 : "x11",
+        "SDL_VIDEO_X11_DGAMOUSE"          : "0",
     })
     if mangohud_on:
         env["MANGOHUD"]        = "1"
