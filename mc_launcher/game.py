@@ -33,11 +33,11 @@ def build_env(mangohud_on: bool = False) -> dict:
 
     env = os.environ.copy()
 
-    # Wayland + NVIDIA EGL sorunlarını aşmak için WAYLAND_DISPLAY değişkenini gizleyip
-    # oyunun XWayland (X11) modunda başlamasını sağlıyoruz. Ayrıca fare algılama sorunları için SDL'i X11'e zorluyoruz.
-    env.pop("WAYLAND_DISPLAY", None)
-    env["SDL_VIDEODRIVER"] = "x11"
-    env["GDK_BACKEND"] = "x11"
+    # Farenin algılanamaması sorununun kök nedeni, Wayland ortamında Wine'ın XWayland'e zorlanmasıdır.
+    # XWayland, "Raw Input" (GameInput) yakalamasında sıklıkla sorun yaratır.
+    # Çözüm olarak Proton'un DOĞRUDAN yerel Wayland sürücüsünü kullanmasını sağlıyoruz:
+    env["PROTON_ENABLE_WAYLAND"] = "1"
+
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
     # VR DLL kütüphanelerini devre dışı bırakıyoruz.
@@ -386,9 +386,9 @@ def launch_game(
                 except Exception as e:
                     print(f"[LAUNCH] GUI yamalama hatası: {e}")
 
-            # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyorduk.
-            # Ancak pressure-vessel (umu-run) fare algılamasını (GameInput raw mouse) bozduğu için geçici olarak UMU kullanımını devre dışı bırakıyoruz.
-            umu_run = None
+            # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyoruz.
+            # UMU, steamrt3 (pressure-vessel) ile hem X11 hem Wayland bağlantılarını container içine alır.
+            umu_run = ensure_umu(on_status) if login_method == "ingame" else None
             if umu_run:
                 # steamrt3 runtime'ının yüklü olup olmadığını kontrol edip, eksikse otomatik indirmeyi aktif ediyoruz.
                 xdg_data = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
