@@ -25,9 +25,9 @@
     <category>Game</category>
   </categories>
   <releases>
-    <release version="2.4.4" date="2026-06-23">
+    <release version="2.4.5" date="2026-06-23">
       <description>
-        <p>GDK Launcher version 2.4.4 hotfix release. Completes the fix for 32-bit GL mappings by restoring GL32 extensions and properly setting up ld.so.conf for Steam Linux Runtime compatibility.</p>
+        <p>GDK Launcher version 2.4.5 final hotfix. Fixes the Flatpak bwrap mount and ldconfig 256 errors by ensuring correct directory paths exist prior to linking.</p>
       </description>
     </release>
   </releases>

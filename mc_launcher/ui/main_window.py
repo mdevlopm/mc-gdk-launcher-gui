@@ -2193,7 +2193,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         about_page_widget.add(info_group)
         self.about_info_group = info_group
 
-        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.4.4")
+        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.4.5")
         info_group.add(ver_row)
         self.about_ver_row = ver_row
 

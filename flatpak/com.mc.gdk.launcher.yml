@@ -15,7 +15,6 @@ add-extensions:
     subdirectories: true
     no-autodownload: true
     autodelete: false
-    add-ld-path: lib
     merge-dirs: vulkan/icd.d;glvnd/egl_vendor.d;OpenCL/vendors;lib/dri;lib/d3d;vulkan/explicit_layer.d;vulkan/implicit_layer.d
     download-if: active-gl-driver
     enable-if: active-gl-driver
@@ -100,6 +99,8 @@ modules:
       - install -Dm644 flatpak/com.mc.gdk.launcher.desktop /app/share/applications/com.mc.gdk.launcher.desktop
       - install -Dm644 flatpak/com.mc.gdk.launcher.metainfo.xml /app/share/metainfo/com.mc.gdk.launcher.metainfo.xml
       - mkdir -p /app/etc
+      - mkdir -p /app/lib/i386-linux-gnu
+      - mkdir -p /app/lib/i386-linux-gnu/GL
       - echo "/app/lib/i386-linux-gnu" > /app/etc/ld.so.conf
       - |
         ICON_SRC=assets/icon.svg
