@@ -53,10 +53,11 @@ def build_env(mangohud_on: bool = False) -> dict:
         "WINEDLLOVERRIDES"                : dll_overrides,
         "WINE_FULLSCREEN_INTEGER_SCALING" : "0",
         "PROTON_USE_WINED3D"              : "0",
+        "VKD3D_CONFIG"                    : "force_raw_va_cbv",
         "SDL_MOUSEDRIVER"                 : "x11",
         "SDL_VIDEO_X11_DGAMOUSE"          : "0",
-        "SteamAppId"                      : "0",
-        "SteamGameId"                     : "0",
+        "SteamAppId"                      : "4000",
+        "SteamGameId"                     : "4000",
         "PROTON_LOG"                      : "1",
     })
     if mangohud_on:
