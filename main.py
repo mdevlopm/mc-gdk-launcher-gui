@@ -22,12 +22,15 @@ class LauncherApp(Adw.Application):
     def do_activate(self):
         # KDE ve diğer masaüstü ortamlarında Adwaita uyarısını ve görünmeyen ikon sorununu çözer
         style_manager = Adw.StyleManager.get_default()
-        style_manager.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+        style_manager.set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         
+        import os
         from gi.repository import Gtk
         settings = Gtk.Settings.get_default()
         if settings:
-            settings.set_property("gtk-icon-theme-name", "Adwaita")
+            desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+            if "gnome" not in desktop:
+                settings.set_property("gtk-icon-theme-name", "Adwaita")
 
         win = self.props.active_window
         if not win:

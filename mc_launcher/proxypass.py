@@ -322,16 +322,55 @@ max-clients: {settings.get('max_clients', 0)}
         return False
 
 
-PROXYPASS_API = "https://api.github.com/repos/Kas-tle/ProxyPass/releases/latest"
+PROXYPASS_API = "https://api.github.com/repos/Kas-tle/ProxyPass/releases"
 
 
-def ensure_proxypass(on_status) -> Optional[str]:
+def get_minecraft_version_prefix(version_str: str) -> str:
+    # "1.26.3005.0" -> "1.26.30"
+    parts = version_str.split(".")
+    if len(parts) >= 3:
+        major, minor, patch = parts[0], parts[1], parts[2]
+        if len(patch) >= 2:
+            patch = patch[:2]
+        return f"{major}.{minor}.{patch}"
+    return ""
+
+
+def ensure_proxypass(on_status, exe_path: str = "") -> Optional[str]:
     """
-    PROXYPASS_DIR altına ProxyPass.jar indirir (yoksa veya bozuksa) ve yolunu döner.
+    PROXYPASS_DIR altına ProxyPass.jar indirir (yoksa veya bozuksa veya sürüm uyuşmazlığı varsa) ve yolunu döner.
     """
     os.makedirs(PROXYPASS_DIR, exist_ok=True)
     jar_path = os.path.join(PROXYPASS_DIR, "ProxyPass.jar")
-    
+    version_file = os.path.join(PROXYPASS_DIR, "ProxyPass.version")
+
+    # Oyun sürümünü tespit et
+    current_game_ver = ""
+    if exe_path:
+        manifest_path = os.path.join(os.path.dirname(exe_path), "appxmanifest.xml")
+        if os.path.isfile(manifest_path):
+            try:
+                import re
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                m = re.search(r'Version="([^"]+)"', content)
+                if m:
+                    current_game_ver = get_minecraft_version_prefix(m.group(1))
+            except Exception as e:
+                print(f"[ProxyPass] Failed to read appxmanifest: {e}")
+
+    # Sürüm değiştiyse mevcut JAR dosyasını silelim (böylece doğru sürüm indirilir)
+    if os.path.isfile(version_file) and os.path.isfile(jar_path):
+        try:
+            with open(version_file, "r") as f:
+                downloaded_ver = f.read().strip()
+            if current_game_ver and downloaded_ver != current_game_ver:
+                print(f"[ProxyPass] Version mismatch (local jar: {downloaded_ver}, game expects: {current_game_ver}). Re-downloading.")
+                os.remove(jar_path)
+                os.remove(version_file)
+        except OSError:
+            pass
+
     import zipfile
     if os.path.isfile(jar_path):
         if zipfile.is_zipfile(jar_path):
@@ -347,16 +386,36 @@ def ensure_proxypass(on_status) -> Optional[str]:
     try:
         from mc_launcher.i18n import _t
         on_status(_t("progress_download_proxypass"), "running")
+
+        # Karşılaştırma için bütün release'leri çekelim (pre-release'leri yakalamak adına)
         req = urllib.request.Request(
             PROXYPASS_API, headers={"User-Agent": "mc-gdk-launcher"}
         )
-        with urllib.request.urlopen(req, timeout=20) as r:
-            data = json.loads(r.read())
+        with urllib.request.urlopen(req, timeout=60) as r:
+            releases = json.loads(r.read())
+
+        selected_release = None
+        if current_game_ver and isinstance(releases, list):
+            for release in releases:
+                tag = release.get("tag_name", "")
+                if current_game_ver in tag:
+                    selected_release = release
+                    print(f"[ProxyPass] Found matching release for game version {current_game_ver}: {tag}")
+                    break
+
+        if not selected_release and isinstance(releases, list) and len(releases) > 0:
+            # Uyuşan sürüm bulunamazsa en güncel sürümü (stable veya pre) kullanırız
+            selected_release = releases[0]
+            print(f"[ProxyPass] No matching release found. Using latest available: {selected_release.get('tag_name')}")
+
+        if not selected_release:
+            raise RuntimeError("ProxyPass release not found.")
+
         asset = next(
-            (a for a in data.get("assets", []) if a["name"].endswith(".jar")), None
+            (a for a in selected_release.get("assets", []) if a["name"].endswith(".jar")), None
         )
         if not asset:
-            raise RuntimeError("ProxyPass.jar bulunamadı.")
+            raise RuntimeError("ProxyPass.jar asset not found in release.")
 
         url = asset["browser_download_url"]
         req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
@@ -384,6 +443,14 @@ def ensure_proxypass(on_status) -> Optional[str]:
 
         if os.path.exists(tmp_jar_path):
             os.replace(tmp_jar_path, jar_path)
+
+        # Versiyon bilgisini yerel dosyaya yazalım
+        if current_game_ver:
+            try:
+                with open(version_file, "w") as f:
+                    f.write(current_game_ver)
+            except Exception as ev:
+                print(f"[ProxyPass] Error writing version file: {ev}")
 
         on_status(_t("toast_proxypass_download_ok"), "ok")
         return jar_path

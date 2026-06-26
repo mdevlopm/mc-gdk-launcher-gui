@@ -116,7 +116,7 @@
     "lbl_login_method": "Login Method",
     "menu_language": "Language",
     "menu_settings": "Settings",
-    "msg_about": "This launcher provides a modular interface designed to facilitate running Minecraft Bedrock on Linux with GDK-Proton.\n\nVersion 2.0 Innovations and Features:\n- Dynamic Login Method: One-click toggle between ProxyPass and In-Game Microsoft authentication\n- Automated Vanilla Restoration: Clean removal of patch DLLs and Wine MSA registry reset under ProxyPass mode\n- Custom Patching Support: Automatic xuser Proton download/installation and game pre-auth DLL hooks integration\n- Premium Store Page: One-click installation of custom mods, resource packs, and custom interface layouts\n- Built-in options.txt layout editor and troubleshooting/fix utilities",
+    "msg_about": "This launcher provides a modular interface designed to facilitate running Minecraft Bedrock on Linux with GDK-Proton.\n\nVersion 3.0 Innovations and Features:\n- Stable Login Integration: Resolved stability issues and imbalances in the ProxyPass mode\n- Fixed Startup Failures: Addressed game launch crashes and loading hangs to guarantee flawless startup\n- Performance & Compatibility: General performance, GnuTLS compatibility, and layout fixes completed\n- Fully Usable State: Launcher is now completely stable and ready for all Linux players",
     "msg_logout_confirm": "Are you sure you want to log out and delete auth.json?\n\n{path}",
     "opt_login_ingame": "In-Game Login (Direct)",
     "opt_login_proxypass": "ProxyPass (MITM Proxy)",
@@ -287,5 +287,12 @@
     "wizard_step2_title": "2. ProxyPass & Java Setup",
     "wizard_step3_desc": "GDK-Proton is a custom Wine/Proton compatibility layer that runs Minecraft Bedrock GDK on Linux. You can download the latest version from GitHub automatically.",
     "wizard_step3_title": "3. GDK-Proton Setup",
-    "wizard_title": "Setup Wizard"
+    "wizard_title": "Setup Wizard",
+    "status_restoring_vanilla": "Restoring clean vanilla game files for ProxyPass...",
+    "status_updating_session": "Updating in-game Microsoft session...",
+    "status_downloading_steamrt3": "Steam Linux Runtime (steamrt3) is missing. Downloading, this may take a few minutes...",
+    "status_game_running": "Game is running...",
+    "status_game_exited": "Game closed (exit: {ret})",
+    "status_game_error": "Error: {error}",
+    "status_scanning_disks": "Scanning disks... Please wait."
 }

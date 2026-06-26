@@ -48,7 +48,7 @@ def init_i18n():
         if not sys_lang:
             try:
                 import locale
-                sys_lang = (locale.getlocale()[0] or locale.getdefaultlocale()[0] or "")
+                sys_lang = locale.getlocale()[0] or ""
             except Exception:
                 pass
         

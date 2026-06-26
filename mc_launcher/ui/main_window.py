@@ -2175,7 +2175,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         gh_row = Adw.ActionRow(title=_t("about_github"))
         self.about_gh_btn = Gtk.Button(label=_t("btn_open"))
         self.about_gh_btn.add_css_class("pill")
-        self.about_gh_btn.connect("clicked", lambda *_: self._open_uri("https://github.com/mdevlopm/mc-gdk-launcher-gui"))
+        self.about_gh_btn.connect("clicked", lambda *_: self._open_uri("https://discord.gg/VzYZVWBjs"))
         gh_row.add_suffix(self.about_gh_btn)
         links_group.add(gh_row)
         self.about_gh_row = gh_row
@@ -2193,7 +2193,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         about_page_widget.add(info_group)
         self.about_info_group = info_group
 
-        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="2.4.6")
+        ver_row = Adw.ActionRow(title=_t("about_version"), subtitle="3.0")
         info_group.add(ver_row)
         self.about_ver_row = ver_row
 

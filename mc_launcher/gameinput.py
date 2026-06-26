@@ -17,9 +17,18 @@ def ok(msg): print(f"[GameInput] [OK] {msg}")
 def warn(msg): print(f"[GameInput] [WARN] {msg}")
 
 def kill_prefix_procs(prefix):
-    pass
+    import subprocess
+    try:
+        subprocess.run(
+            ["pkill", "-9", "-f", f"WINEPREFIX={prefix}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except Exception:
+        pass
 
-def proton_umu_cmd(exe_name, prefix):
+def proton_umu_cmd(exe_name, prefix, proton_bin=None):
+    if proton_bin:
+        return [proton_bin, "run", exe_name], {"WINEPREFIX": str(prefix)}
     return ["wine", exe_name], {"WINEPREFIX": str(prefix)}
 
 
@@ -192,7 +201,7 @@ def _extract_gameinput_redist(msi_path: Path, prefix: Path):
     return gameinput_redist_ok(prefix)
 
 
-def _set_gameinput_registry(prefix: Path):
+def _set_gameinput_registry(prefix: Path, proton_bin=None):
     """Point the game's GameInput loader at the extracted redist: RedistDir
     (both registry views) + the demand-start service entry, matching what the
     MSI writes. Imported in one umu/reg pass."""
@@ -214,7 +223,7 @@ def _set_gameinput_registry(prefix: Path):
     rf = CACHE / "gameinput.reg"
     CACHE.mkdir(parents=True, exist_ok=True)
     rf.write_text(reg, encoding="utf-16")        # UTF-16 + BOM (Wine needs it)
-    cmd, env = proton_umu_cmd("reg", prefix=prefix)
+    cmd, env = proton_umu_cmd("reg", prefix=prefix, proton_bin=proton_bin)
     cmd += ["import", "Z:" + str(rf).replace("/", "\\")]
     try:
         subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL,
@@ -223,7 +232,7 @@ def _set_gameinput_registry(prefix: Path):
         warn(f"GameInput RedistDir registry import failed ({e}).")
 
 
-def install_gameinput(prefix: Path, game_dir: Path):
+def install_gameinput(prefix: Path, game_dir: Path, proton_bin: str = None):
     """Install the NATIVE Microsoft GameInput redist into the prefix. Heals
     prefixes from older releases (≤ 1.0.9) that fell back to Wine's builtin
     GameInput (no mouse) because the redist never actually installed.
@@ -245,28 +254,28 @@ def install_gameinput(prefix: Path, game_dir: Path):
     info("Installing Microsoft GameInput (native redist — in-game mouse) …")
     try:
         if _extract_gameinput_redist(msi, prefix):
-            _set_gameinput_registry(prefix)
+            _set_gameinput_registry(prefix, proton_bin=proton_bin)
             ok("Microsoft GameInput installed (native redist)")
             return
     except Exception as e:
         warn(f"GameInput direct extraction failed ({e}) — trying the MSI.")
-    _install_gameinput_via_msi(prefix, msi)
+    _install_gameinput_via_msi(prefix, msi, proton_bin=proton_bin)
     if gameinput_redist_ok(prefix):
-        _set_gameinput_registry(prefix)
+        _set_gameinput_registry(prefix, proton_bin=proton_bin)
         ok("Microsoft GameInput installed (native redist)")
     else:
         warn("GameInput install incomplete — the in-game mouse may not work; "
              "re-run Play or 'Install / Update' to retry.")
 
 
-def _install_gameinput_via_msi(prefix: Path, msi: Path):
+def _install_gameinput_via_msi(prefix: Path, msi: Path, proton_bin=None):
     """Fallback: run GameInputRedist.msi under umu, but never wait for it to
     finish — its final RtlGenRandom action hangs msiexec indefinitely on some
     hosts. Poll for the redist artifacts (they are written early) and kill the
     install the moment they appear, scoped to this prefix."""
     LOGS.mkdir(parents=True, exist_ok=True)
     log = open(LOGS / "native-login.log", "a")
-    cmd, env = proton_umu_cmd("msiexec", prefix=prefix)
+    cmd, env = proton_umu_cmd("msiexec", prefix=prefix, proton_bin=proton_bin)
     env["WINEDEBUG"] = "-all"
     overrides = ["cryptbase=n,b"]
     if env.get("WINEDLLOVERRIDES"):

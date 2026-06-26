@@ -25,6 +25,11 @@
     <category>Game</category>
   </categories>
   <releases>
+    <release version="3.0" date="2026-06-26">
+      <description>
+        <p>GDK Launcher version 3.0. Stability improvements for the ProxyPass integration, fixes for game startup failure/hangs, and final general stability issues resolved. The launcher is now fully stable and ready for general use.</p>
+      </description>
+    </release>
     <release version="2.4.5" date="2026-06-23">
       <description>
         <p>GDK Launcher version 2.4.5 final hotfix. Fixes the Flatpak bwrap mount and ldconfig 256 errors by ensuring correct directory paths exist prior to linking.</p>

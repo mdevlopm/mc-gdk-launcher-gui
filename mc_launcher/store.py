@@ -53,7 +53,7 @@ def detect_zip_type(file_path: str) -> str:
     try:
         with zipfile.ZipFile(file_path, 'r') as z:
             names = z.namelist()
-            if any(name.endswith("level.dat") or "db/" in name for name in names):
+            if any(name.endswith("level.dat") for name in names):
                 return ".mcworld"
             if any(name.lower().endswith(".mcpack") for name in names):
                 return ".mcaddon"
@@ -82,7 +82,7 @@ def install_bedrock_content(
     
     def is_world_zip(zip_ref):
         names = zip_ref.namelist()
-        return any(name.endswith("level.dat") or "db/" in name for name in names)
+        return any(name.endswith("level.dat") for name in names)
 
     def get_pack_type(zip_ref):
         names = zip_ref.namelist()
@@ -243,19 +243,15 @@ def download_and_install_content(
         temp_fd, temp_path = tempfile.mkstemp(suffix=".tmp")
         os.close(temp_fd)
         
-        # SSL Verification fallback support
+        # SSL Verification
         ssl_context = ssl.create_default_context()
         try:
             resp = urllib.request.urlopen(req, timeout=120, context=ssl_context)
         except urllib.error.URLError as url_err:
-            # Fallback to unverified SSL context if certificate verification failed
             reason_str = str(url_err.reason).lower()
-            if "cert" in reason_str or "ssl" in reason_str or "verify" in reason_str or "handshake" in reason_str:
-                on_progress(_t("store_connecting") + " (SSL unverified fallback)")
-                unverified_context = ssl._create_unverified_context()
-                resp = urllib.request.urlopen(req, timeout=120, context=unverified_context)
-            else:
-                raise url_err
+            if "cert" in reason_str or "ssl" in reason_str or "verify" in reason_str:
+                on_progress(_t("store_connecting") + " (SSL Error: Connection refused)")
+            raise url_err
         
         with resp:
             # 2. Content-Disposition başlığından uzantı tespiti

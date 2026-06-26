@@ -17,6 +17,7 @@ from mc_launcher.java_rt import ensure_java
 from mc_launcher.proton import ensure_umu
 from mc_launcher.gameinput import install_gameinput
 from pathlib import Path
+from mc_launcher.i18n import _t
 
 
 def build_env(mangohud_on: bool = False) -> dict:
@@ -42,24 +43,50 @@ def build_env(mangohud_on: bool = False) -> dict:
     env["GDK_BACKEND"] = "x11"
 
     # Minecraft Bedrock VR başlıklarını ararken (OpenVR, OpenXR) çökmeleri önlemek için
-    # VR DLL kütüphanelerini devre dışı bırakıyoruz.
-    dll_overrides = "d3d12=n;dxgi=n;vrclient=;vrclient_x64=;openvr_api=;wineopenxr=;winedbg.exe=d;winedbg=d"
+    # VR DLL kütüphanelerini devre dışı bırakıyoruz. (VKD3D için d3d12 ve dxgi geçersiz kılmaları kaldırıldı)
+    dll_overrides = "vrclient=;vrclient_x64=;openvr_api=;wineopenxr=;winedbg.exe=d;winedbg=d"
 
     env.update({
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": steam_root,
         "STEAM_COMPAT_DATA_PATH"          : COMPAT_DATA,
+        "WINEPREFIX"                      : os.path.join(COMPAT_DATA, "pfx"),
         "PROTON_NO_ESYNC"                 : "0",
         "PROTON_NO_FSYNC"                 : "0",
         "WINEDLLOVERRIDES"                : dll_overrides,
         "WINE_FULLSCREEN_INTEGER_SCALING" : "0",
         "PROTON_USE_WINED3D"              : "0",
-        "VKD3D_CONFIG"                    : "force_raw_va_cbv",
         "SDL_MOUSEDRIVER"                 : "x11",
         "SDL_VIDEO_X11_DGAMOUSE"          : "0",
         "SteamAppId"                      : "4000",
         "SteamGameId"                     : "4000",
-        "PROTON_LOG"                      : "1",
+        "PROTON_LOG"                      : os.environ.get("PROTON_LOG", "0"),
+        "MICROSOFT_WINDOWSAPPRUNTIME_BOOTSTRAP_INITIALIZE_SHOWUI": "0",
+        "MICROSOFT_WINDOWSAPPRUNTIME_BOOTSTRAP_INITIALIZE_FAILFAST": "0",
+        "MICROSOFT_WINDOWSAPPRUNTIME_DEPLOYMENT_INITIALIZE_ONERRORSHOWUI": "0",
     })
+
+    # AMD RDNA GPU'larında gerekli olan force_raw_va_cbv ayarını dinamik olarak ekliyoruz.
+    # Bu ayar NVIDIA ekran kartlarında GPU kilitlenmesine yol açtığı için NVIDIA'da etkinleştirilmez.
+    try:
+        res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=2)
+        if "AMD" in res.stdout or "Radeon" in res.stdout:
+            env["VKD3D_CONFIG"] = "force_raw_va_cbv"
+    except Exception as e:
+        print(f"[LAUNCH] GPU tespiti yapılamadı: {e}")
+
+    # GnuTLS öncelik ayarları (Azure bağlantısı ve GDK-Proton uyumluluğu için her iki modda da gereklidir)
+    try:
+        etc_dir = os.path.join(DATA_DIR, "etc")
+        os.makedirs(etc_dir, exist_ok=True)
+        prio_file = os.path.join(etc_dir, "gnutls-no-tls13.cfg")
+        if not os.path.exists(prio_file):
+            with open(prio_file, "w") as f:
+                f.write("[priorities]\nSYSTEM = NORMAL:-VERS-TLS1.3:%COMPAT\n")
+        env["GNUTLS_SYSTEM_PRIORITY_FILE"] = prio_file
+        env["GNUTLS_SYSTEM_PRIORITY_FAIL_ON_INVALID"] = "0"
+    except Exception as e:
+        print(f"[LAUNCH] GnuTLS öncelik dosyası yazma hatası: {e}")
+
     if mangohud_on:
         env["MANGOHUD"]        = "1"
         env["MANGOHUD_CONFIG"] = "fps,frame_timing,gpu_stats,cpu_stats,vram,ram"
@@ -208,23 +235,30 @@ def launch_game(
     jar = None
     java_bin = None
     if login_method == "proxypass":
-        jar = find_proxypass(exe) or ensure_proxypass(on_status)
+        jar = find_proxypass(exe) or ensure_proxypass(on_status, exe_path=exe)
         java_bin = ensure_java(on_status)
 
     result = {"game": None, "proxy": None, "cancelled": False}
 
     def runner():
         proxy_proc = None
-        relay = None
         try:
             if result.get("cancelled"):
                 return
+
+            # Proton binary dosyalarını GDK uyumluluğu için yama yapıyoruz (combase.dll, ntdll.dll stubs)
+            try:
+                from mc_launcher.proton import patch_proton
+                patch_proton(proton)
+            except Exception as pe:
+                print(f"[LAUNCH] Proton yamalama hatası: {pe}")
+
             # Kill leftover wineserver or game processes to prevent registry locks
             try:
                 # Use exact name matching (-x) for game processes, and specific pattern for java-proxypass
                 subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "-f", "java.*ProxyPass\\.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 _kill_wineserver(proton)
                 time.sleep(1)
             except Exception as e:
@@ -233,7 +267,7 @@ def launch_game(
             if result.get("cancelled"):
                 return
             if login_method == "proxypass":
-                on_status("ProxyPass için temiz oyun dosyaları geri yükleniyor...", "running")
+                on_status(_t("status_restoring_vanilla"), "running")
                 try:
                     from mc_launcher.preauth import restore_vanilla_state, wine_disable_winegdk_preauth, hide_signin_button
                     pfx = os.path.join(COMPAT_DATA, "pfx")
@@ -305,7 +339,7 @@ def launch_game(
                     install_gdk_xbox_dlls, hide_signin_button
                 )
                 
-                on_status("Oyun içi Microsoft oturumu güncelleniyor...", "running")
+                on_status(_t("status_updating_session"), "running")
                 
                 # 1. Read token
                 token_file = os.path.join(DATA_DIR, "msa", "token.json")
@@ -405,7 +439,7 @@ def launch_game(
                 xdg_data = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
                 umu_shim = os.path.join(xdg_data, "umu", "steamrt3", "umu-shim")
                 if not os.path.exists(umu_shim):
-                    on_status("Steam Linux Runtime (steamrt3) eksik. İndiriliyor, bu işlem birkaç dakika sürebilir...", "running")
+                    on_status(_t("status_downloading_steamrt3"), "running")
                     runtime_update = "1"
                 else:
                     runtime_update = "0"
@@ -449,8 +483,8 @@ def launch_game(
                     "STEAM_COMPAT_CLIENT_INSTALL_PATH": os.path.expanduser("~/.steam/steam"),
                     "UMU_RUNTIME_UPDATE": runtime_update,
                     # Hata ayıklama logları için:
-                    "PROTON_LOG": "1",
-                    "PROTON_LOG_DIR": os.path.dirname(COMPAT_DATA),
+                    "PROTON_LOG": os.environ.get("PROTON_LOG", "0"),
+                    "PROTON_LOG_DIR": os.environ.get("PROTON_LOG_DIR", os.path.dirname(COMPAT_DATA)),
                     # WindowsAppRuntime hata pencerelerini ve çökmeleri engellemek için gerekli değişkenler:
                     "MICROSOFT_WINDOWSAPPRUNTIME_BOOTSTRAP_INITIALIZE_SHOWUI": "0",
                     "MICROSOFT_WINDOWSAPPRUNTIME_BOOTSTRAP_INITIALIZE_FAILFAST": "0",
@@ -477,7 +511,7 @@ def launch_game(
             prefix_dir = Path(os.path.join(COMPAT_DATA, "pfx"))
             game_dir = Path(os.path.dirname(exe))
             try:
-                install_gameinput(prefix_dir, game_dir)
+                install_gameinput(prefix_dir, game_dir, proton_bin=proton)
             except Exception as e:
                 print(f"[LAUNCH] GameInput yükleme hatası: {e}")
 
@@ -519,20 +553,15 @@ def launch_game(
             t1.start()
             t2.start()
 
-            on_status("Oyun çalışıyor...", "running")
+            on_status(_t("status_game_running"), "running")
             ret = proc.wait()
             t1.join(timeout=3)
             t2.join(timeout=3)
-            on_status(f"Oyun kapandı (exit: {ret})", "ok" if ret == 0 else "error")
+            on_status(_t("status_game_exited", ret=ret), "ok" if ret == 0 else "error")
         except Exception as e:
             print(f"[HATA]\n{traceback.format_exc()}")
-            on_status(f"Hata: {e}", "error")
+            on_status(_t("status_game_error", error=str(e)), "error")
         finally:
-            if relay:
-                try:
-                    relay.stop()
-                except Exception as e:
-                    print(f"[PROXY] Error stopping relay: {e}")
             if proxy_proc and proxy_proc.poll() is None:
                 try:
                     proxy_proc.terminate()
@@ -584,7 +613,7 @@ def scan_for_exe(on_done: Callable[[List[str]], None], on_status: Callable):
         from gi.repository import GLib
         GLib.idle_add(on_done, found)
 
-    on_status("Diskler taranıyor... Lütfen bekleyin.", "running")
+    on_status(_t("status_scanning_disks"), "running")
     threading.Thread(target=worker, daemon=True).start()
 
 
