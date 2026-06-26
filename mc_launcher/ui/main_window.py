@@ -3306,7 +3306,8 @@ class LauncherWindow(Adw.ApplicationWindow):
         # 2. Kill any orphaned ProxyPass.jar processes
         try:
             import subprocess
-            subprocess.run(["pkill", "-9", "-f", "ProxyPass.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            from mc_launcher.flatpak import wrap_flatpak_cmd
+            subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             print(f"[Launcher] Error killing ProxyPass: {e}")
 

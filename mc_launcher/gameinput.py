@@ -18,9 +18,10 @@ def warn(msg): print(f"[GameInput] [WARN] {msg}")
 
 def kill_prefix_procs(prefix):
     import subprocess
+    from mc_launcher.flatpak import wrap_flatpak_cmd
     try:
         subprocess.run(
-            ["pkill", "-9", "-f", f"WINEPREFIX={prefix}"],
+            wrap_flatpak_cmd(["pkill", "-9", "-f", f"WINEPREFIX={prefix}"]),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
     except Exception:

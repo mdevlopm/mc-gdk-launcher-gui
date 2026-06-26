@@ -172,11 +172,11 @@ def stop_game(proc_or_result, proton: Optional[str] = None, proxy_proc=None) -> 
             except OSError:
                 pass
 
-    # Direct process kill by name (most robust fallback for detached Wine/Proton games)
-    # Use exact name matching (-x) instead of substring (-f) to avoid killing unrelated processes (e.g., text editors, file managers)
     try:
-        subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        from mc_launcher.flatpak import wrap_flatpak_cmd
+        subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-x", "Minecraft.Windows.exe"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-x", "Minecraft.Windows"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -256,9 +256,10 @@ def launch_game(
             # Kill leftover wineserver or game processes to prevent registry locks
             try:
                 # Use exact name matching (-x) for game processes, and specific pattern for java-proxypass
-                subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "-x", "Minecraft.Windows"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                from mc_launcher.flatpak import wrap_flatpak_cmd
+                subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-x", "Minecraft.Windows.exe"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-x", "Minecraft.Windows"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 _kill_wineserver(proton)
                 time.sleep(1)
             except Exception as e:
@@ -573,6 +574,11 @@ def launch_game(
                     proxy_proc.kill()
                 except OSError:
                     pass
+            try:
+                from mc_launcher.flatpak import wrap_flatpak_cmd
+                subprocess.run(wrap_flatpak_cmd(["pkill", "-9", "-f", "java.*mc-gdk-linux-launcher.*ProxyPass\\.jar"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
             if on_finished:
                 on_finished()
 
