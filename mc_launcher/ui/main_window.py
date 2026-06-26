@@ -1000,6 +1000,8 @@ class LauncherWindow(Adw.ApplicationWindow):
                             "/f"
                         ]
                         try:
+                            from mc_launcher.flatpak import wrap_flatpak_cmd
+                            cmd = wrap_flatpak_cmd(cmd, env)
                             subprocess.run(cmd, env=env, capture_output=True, timeout=10)
                             print(f"[Launcher] Cleared {root} WineGDK RefreshToken registry key for proxypass mode.")
                         except Exception as e:
@@ -3049,7 +3051,9 @@ class LauncherWindow(Adw.ApplicationWindow):
         def runner():
             try:
                 GLib.idle_add(self._toast, _t("toast_winecfg_opening"))
-                proc = subprocess.Popen([proton, "run", "winecfg"], env=env,
+                from mc_launcher.flatpak import wrap_flatpak_cmd
+                cmd = wrap_flatpak_cmd([proton, "run", "winecfg"], env)
+                proc = subprocess.Popen(cmd, env=env,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 proc.wait()
                 GLib.idle_add(self._toast, _t("toast_winecfg_closed"))
@@ -3287,6 +3291,8 @@ class LauncherWindow(Adw.ApplicationWindow):
                     "/f"
                 ]
                 try:
+                    from mc_launcher.flatpak import wrap_flatpak_cmd
+                    cmd = wrap_flatpak_cmd(cmd, env)
                     subprocess.run(cmd, env=env, capture_output=True, timeout=10)
                 except Exception as e:
                     print(f"[LOGOUT] Registry silme hatası: {e}")
@@ -3347,18 +3353,21 @@ class LauncherWindow(Adw.ApplicationWindow):
                         except Exception as e:
                             print(f"[PROXY] Config rewrite error: {e}")
 
+                        proxy_cmd = [
+                            java_bin,
+                            "-Djava.net.preferIPv4Stack=true",
+                            "-XX:+IgnoreUnrecognizedVMOptions",
+                            "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+                            "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
+                            "-Dio.netty.tryReflectionSetAccessible=true",
+                            "-jar", jar
+                        ]
+                        from mc_launcher.flatpak import wrap_flatpak_cmd
+                        proxy_cmd = wrap_flatpak_cmd(proxy_cmd, cwd=os.path.dirname(jar))
                         proxy_proc = subprocess.Popen(
-                            [
-                                java_bin,
-                                "-Djava.net.preferIPv4Stack=true",
-                                "-XX:+IgnoreUnrecognizedVMOptions",
-                                "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
-                                "--add-opens", "java.base/java.nio=ALL-UNNAMED",
-                                "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-                                "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
-                                "-Dio.netty.tryReflectionSetAccessible=true",
-                                "-jar", jar
-                            ],
+                            proxy_cmd,
                             cwd=os.path.dirname(jar),
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
