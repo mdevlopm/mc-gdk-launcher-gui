@@ -279,18 +279,21 @@ def launch_game(
 
                 if jar and java_bin:
                     print(f"[PROXY] Başlatılıyor: {jar}")
+                    from mc_launcher.flatpak import wrap_flatpak_cmd
+                    proxy_cmd = [
+                        java_bin,
+                        "-Djava.net.preferIPv4Stack=true",
+                        "-XX:+IgnoreUnrecognizedVMOptions",
+                        "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+                        "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+                        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+                        "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
+                        "-Dio.netty.tryReflectionSetAccessible=true",
+                        "-jar", jar
+                    ]
+                    proxy_cmd = wrap_flatpak_cmd(proxy_cmd, cwd=os.path.dirname(jar))
                     proxy_proc = subprocess.Popen(
-                        [
-                            java_bin,
-                            "-Djava.net.preferIPv4Stack=true",
-                            "-XX:+IgnoreUnrecognizedVMOptions",
-                            "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.nio=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-                            "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED",
-                            "-Dio.netty.tryReflectionSetAccessible=true",
-                            "-jar", jar
-                        ],
+                        proxy_cmd,
                         cwd=os.path.dirname(jar),
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
