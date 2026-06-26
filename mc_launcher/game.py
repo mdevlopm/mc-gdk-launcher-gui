@@ -279,6 +279,23 @@ def launch_game(
                     print(f"[LAUNCH] Hata (dosya geri yükleme): {e}")
 
                 if jar and java_bin:
+                    # Ensure ProxyPass binds on 0.0.0.0:19132 (direct mode) before starting
+                    try:
+                        from mc_launcher.proxypass import read_proxypass_config, write_proxypass_config
+                        pp_settings = read_proxypass_config(exe)
+                        changed = False
+                        if pp_settings.get("proxy_host") != "0.0.0.0":
+                            pp_settings["proxy_host"] = "0.0.0.0"
+                            changed = True
+                        if pp_settings.get("proxy_port") != "19132":
+                            pp_settings["proxy_port"] = "19132"
+                            changed = True
+                        if changed:
+                            write_proxypass_config(exe, pp_settings)
+                            print("[PROXY] Launch config updated: proxy binding set to 0.0.0.0:19132")
+                    except Exception as e:
+                        print(f"[PROXY] Launch config rewrite error: {e}")
+
                     print(f"[PROXY] Başlatılıyor: {jar}")
                     from mc_launcher.flatpak import wrap_flatpak_cmd
                     proxy_cmd = [
