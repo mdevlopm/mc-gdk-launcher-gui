@@ -6,12 +6,27 @@ Giriş noktası
 
 import sys
 
-import gi
-gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw
+import traceback
 
-from mc_launcher.ui.main_window import LauncherWindow
+try:
+    import gi
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Adw", "1")
+    from gi.repository import Adw
+    from mc_launcher.ui.main_window import LauncherWindow
+except Exception as e:
+    err_msg = f"Kritik Hata: Eksik bağımlılık veya yükleme sorunu.\n\n{traceback.format_exc()}"
+    sys.stderr.write(err_msg + "\n")
+    
+    # Terminale bakmayan kullanıcılar için temel uyarı:
+    import subprocess
+    import shutil
+    if shutil.which("zenity"):
+        subprocess.run(["zenity", "--error", "--text", err_msg])
+    elif shutil.which("kdialog"):
+        subprocess.run(["kdialog", "--error", err_msg])
+        
+    sys.exit(1)
 
 class LauncherApp(Adw.Application):
     def __init__(self):

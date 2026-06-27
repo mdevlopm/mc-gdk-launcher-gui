@@ -366,7 +366,8 @@ def ensure_umu(on_status: Callable) -> Optional[str]:
                 break
 
         if found_bin:
-            shutil.copy2(found_bin, bin_path)
+            if os.path.abspath(found_bin) != os.path.abspath(bin_path):
+                shutil.copy2(found_bin, bin_path)
             os.chmod(bin_path, 0o755)
             if os.path.exists(tar_path):
                 os.remove(tar_path)

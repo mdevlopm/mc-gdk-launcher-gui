@@ -283,8 +283,13 @@ def _install_gameinput_via_msi(prefix: Path, msi: Path, proton_bin=None):
         overrides.append(env["WINEDLLOVERRIDES"])
     env["WINEDLLOVERRIDES"] = ";".join(overrides)
     cmd += ["/i", "Z:" + str(msi).replace("/", "\\"), "/qn"]
-    proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                            start_new_session=True)
+    try:
+        proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+    except Exception as e:
+        log.close()
+        warn(f"msiexec başlatılamadı: {e}")
+        return
     end = time.time() + 120
     try:
         while time.time() < end:

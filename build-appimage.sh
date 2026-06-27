@@ -81,10 +81,10 @@ export ARCH=x86_64
 # Package the AppDir into an AppImage
 # Pass --appimage-extract-and-run to make sure it doesn't fail if FUSE is not installed/enabled
 echo "Running appimagetool..."
-"$APPIMAGE_TOOL" --appimage-extract-and-run "$APPDIR" "${PROJECT_DIR}/Minecraft_GDK_Launcher-v3.0-x86_64.AppImage"
+"$APPIMAGE_TOOL" --appimage-extract-and-run "$APPDIR" "${PROJECT_DIR}/Minecraft_GDK_Launcher-v3.1-x86_64.AppImage"
 
 echo
 echo "=========================================="
 echo " AppImage build complete!"
-echo " Output path: ${PROJECT_DIR}/Minecraft_GDK_Launcher-v3.0-x86_64.AppImage"
+echo " Output path: ${PROJECT_DIR}/Minecraft_GDK_Launcher-v3.1-x86_64.AppImage"
 echo "=========================================="

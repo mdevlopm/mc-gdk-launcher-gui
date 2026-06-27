@@ -25,6 +25,19 @@
     <category>Game</category>
   </categories>
   <releases>
+    <release version="3.1" date="2026-06-27">
+      <description>
+        <p>GDK Launcher version 3.1. Major security and stability audit release.</p>
+        <ul>
+          <li>Added SHA-256 integrity verification for all downloaded dependencies (MiTM protection).</li>
+          <li>Improved Microsoft GameInput MSI extraction to use pure Python (no msiexec hangs).</li>
+          <li>Fixed Flatpak environment paths and improved Proton/Wine memory offset patching for UWP support.</li>
+          <li>Added atomic writes for config files to prevent data loss.</li>
+          <li>Enhanced Wayland compatibility and dynamic VKD3D workarounds for AMD GPUs.</li>
+          <li>Added GUI-based dependency error alerts.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0" date="2026-06-26">
       <description>
         <p>GDK Launcher version 3.0. Stability improvements for the ProxyPass integration, fixes for game startup failure/hangs, and final general stability issues resolved. The launcher is now fully stable and ready for general use.</p>

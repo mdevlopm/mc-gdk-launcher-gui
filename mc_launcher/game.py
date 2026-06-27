@@ -11,7 +11,7 @@ import time
 import traceback
 from typing import Callable, List, Optional
 
-from mc_launcher.config import SCRIPT_DIR, COMPAT_DATA
+from mc_launcher.config import SCRIPT_DIR, COMPAT_DATA, DATA_DIR
 from mc_launcher.proxypass import find_proxypass, ensure_proxypass
 from mc_launcher.java_rt import ensure_java
 from mc_launcher.proton import ensure_umu
@@ -385,7 +385,7 @@ def launch_game(
                 if fresh and fresh.get("refresh_token"):
                     tok = fresh["refresh_token"]
                     try:
-                        os.path.dirname(token_file) and os.makedirs(os.path.dirname(token_file), exist_ok=True)
+                        os.makedirs(os.path.dirname(token_file), exist_ok=True)
                         with open(token_file, "w") as f:
                             json.dump({"refresh_token": tok, "obtained": int(time.time())}, f, indent=2)
                         print("[LAUNCH] Token başarıyla yenilendi ve kaydedildi.")

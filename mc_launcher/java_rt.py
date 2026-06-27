@@ -133,6 +133,15 @@ def ensure_java(on_status) -> Optional[str]:
         java_bin = find_java()
         if java_bin:
             os.chmod(java_bin, 0o755)
+            import subprocess
+            try:
+                subprocess.run([java_bin, "-version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except PermissionError:
+                on_status("Hata: Java çalıştırılamadı. Kurulum dizini 'noexec' ile bağlanmış olabilir (örn. /tmp).", "error")
+                return None
+            except Exception as e:
+                print(f"[Java] Test execution failed: {e}")
+                
             on_status(_t("toast_java_download_ok"), "ok")
             return java_bin
 

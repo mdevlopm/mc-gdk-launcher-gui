@@ -203,6 +203,7 @@ max-clients: {settings.get('max_clients', 0)}
                     os.fsync(tmp_fd)
                 except OSError:
                     pass
+            os.chmod(tmp_path, 0o644)
             os.replace(tmp_path, path)
             return True
         except OSError as e:
@@ -311,6 +312,7 @@ max-clients: {settings.get('max_clients', 0)}
                 os.fsync(tmp_fd)
             except OSError:
                 pass
+        os.chmod(tmp_path, 0o644)
         os.replace(tmp_path, path)
         return True
     except OSError as e:
@@ -385,6 +387,7 @@ def ensure_proxypass(on_status, exe_path: str = "") -> Optional[str]:
     tmp_jar_path = jar_path + ".tmp"
     try:
         from mc_launcher.i18n import _t
+        import urllib.error
         on_status(_t("progress_download_proxypass"), "running")
 
         # Karşılaştırma için bütün release'leri çekelim (pre-release'leri yakalamak adına)
@@ -454,6 +457,12 @@ def ensure_proxypass(on_status, exe_path: str = "") -> Optional[str]:
 
         on_status(_t("toast_proxypass_download_ok"), "ok")
         return jar_path
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            on_status("GitHub API sınırına ulaşıldı (Rate Limit). Lütfen daha sonra tekrar deneyin.", "error")
+        else:
+            on_status(f"HTTP Hatası: {e.code}", "error")
+        return None
     except Exception as e:
         on_status(f"ProxyPass indirme hatası: {e}", "error")
         return None

@@ -44,7 +44,7 @@ def msa_refresh(refresh_token: str) -> Optional[dict]:
             if isinstance(res, dict) and "access_token" in res:
                 return res
             return None
-    except Exception as e:
+    except urllib.error.URLError as e:
         print(f"[PreAuth] MSA refresh failed: {e}")
         return None
 
@@ -74,7 +74,7 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
                 priv = serialization.load_pem_private_key(f.read(), password=None)
             with open(device_id_path, "r") as f:
                 device_id = f.read().strip()
-        except Exception:
+        except OSError:
             priv = None
             device_id = None
     else:
@@ -93,7 +93,7 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
                     serialization.PrivateFormat.PKCS8,
                     serialization.NoEncryption()
                 ))
-        except Exception:
+        except OSError:
             try:
                 os.close(fd)
             except OSError:
@@ -141,7 +141,8 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
         def json(self):
             try:
                 return json.loads(self._raw)
-            except Exception:
+            except json.JSONDecodeError as e:
+                print(f"JSON Parse Hatası: {e}")
                 return {}
 
     def _xbl_post(url, body_dict):
@@ -206,7 +207,9 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
             })
             if ru.status_code == 200:
                 uj = ru.json()
-                user_token = uj["Token"]
+                user_token = uj.get("Token")
+                if not user_token:
+                    print(f"[PreAuth] user.auth HTTP 200 döndü ancak Token eksik.")
                 user_token_expiry = uj.get("NotAfter", "")
             else:
                 print(f"[PreAuth] user.auth HTTP {ru.status_code} — {ru.text[:200]}")
@@ -332,7 +335,7 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
             except OSError:
                 pass
         os.replace(tmp, out_path)
-    except Exception:
+    except OSError:
         try:
             os.unlink(tmp)
         except OSError:
@@ -573,7 +576,8 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
     cache_dir = os.path.join(data_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
     
-    def download_with_progress(url, dest, label):
+    def download_with_progress(url, dest, label, expected_sha256=None):
+        import hashlib
         req = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
         with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as out:
             total = int(resp.headers.get("Content-Length") or 0)
@@ -592,6 +596,16 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
                         on_status(f"{label}... {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)", "running")
                     else:
                         on_status(f"{label}... ({done // 1024} KB)", "running")
+        
+        # Hash kontrolü
+        if expected_sha256:
+            sha256 = hashlib.sha256()
+            with open(dest, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    sha256.update(chunk)
+            if sha256.hexdigest() != expected_sha256:
+                os.remove(dest)
+                raise ValueError(f"Güvenlik uyarısı: {dest} için SHA-256 doğrulaması başarısız!")
     
     # 1. Download GDK deps (libHttpClient.GDK.dll, XCurl.dll)
     gdk_deps_url = "https://github.com/minecraft-linux/mcpelauncher-gdk-dependencies/releases/download/v0.0.0"
@@ -632,8 +646,8 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
             with open(marker_file) as f:
                 if f.read().strip() == target_rev:
                     rev_ok = True
-        except Exception:
-            pass
+        except OSError as e:
+            print(f"Revizyon dosyası okunamadı: {e}")
             
     if not rev_ok:
         asset_url = f"https://github.com/Wyze3306/BedrockOnLinux/releases/download/v1.0.5/openssl-xcurl-set-{target_rev}.tar.gz"

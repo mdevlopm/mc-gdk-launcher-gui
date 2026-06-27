@@ -72,6 +72,9 @@ def load_cfg() -> dict:
             if isinstance(data, dict):
                 deep_merge(cfg, data)
                 break
+        except json.JSONDecodeError as e:
+            print(f"[Config] Yapılandırma dosyası bozuk, varsayılanlar kullanılacak ({path}): {e}")
+            continue
         except Exception:
             continue
     return cfg
@@ -82,10 +85,10 @@ def save_cfg(cfg: dict) -> None:
     # Eksik anahtarlar varsa tamamla
     out = copy.deepcopy(DEFAULT_CFG)
     deep_merge(out, cfg or {})
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    os.makedirs(DATA_DIR, exist_ok=True)
     tmp_path = CONFIG_FILE + ".tmp"
     try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(out, f, indent=2)
             f.flush()
