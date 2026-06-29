@@ -6,15 +6,16 @@ This launcher manages GDK-Proton tooling and advanced authentication mechanisms 
 ## ✨ Key Features
 
 - **Modern & Premium Design:** Fully compliant with GNOME design guidelines and Libadwaita standards, featuring system-theme-aware dark mode and glassmorphic card design.
-- **Dynamic Dual Login Mode:**
-  - 🌐 **ProxyPass Method:** Uses a local proxy server to route Microsoft authentication traffic. When this mode is selected, the launcher automatically restores game files to vanilla state, cleans up extra DLL patches, and resets Wine MSA registry entries. Uses the standard GDK-Proton build.
-  - 🎮 **In-Game Login Method:** Automatically installs and integrates the patched `xuser` GDK-Proton build and the custom DLL hooks (`XCurl.dll`, `libHttpClient.GDK.dll`) required for in-game authentication to work.
-- **Automatic Dependency Management:**
-  - Download and install compatible GDK-Proton versions directly from within the launcher.
-  - Automatically detect and download the Java Runtime required for ProxyPass.
-- **Integrated Store:** Download and install custom archive resource packs, mods, and skins to the game with a single click.
-- **options.txt Editor:** Search and edit in-game settings directly from the UI, without closing the launcher or using a file manager.
-- **Built-in Crash Resolver:** Automatic patch triggers to fix freezing or black-screen issues.
+- **Modern & Premium Design:** Fully compliant with GNOME design guidelines and Libadwaita standards, featuring system-theme-aware dark mode and glassmorphic card design.
+- **Dynamic Dual Login Mode (Unified xuser Proton + UMU):**
+  - 🌐 **ProxyPass Method:** Uses a local proxy server to route Microsoft authentication traffic. When selected, the launcher automatically restores game files to vanilla state, cleans up extra DLL patches, and resets Wine MSA registry entries. Runs cleanly via the Unified xuser Proton build.
+  - 🎮 **In-Game Login Method:** Automatically installs and integrates the patched `xuser` GDK-Proton build and custom DLL hooks (`XCurl.dll`, `libHttpClient.GDK.dll`) required for in-game authentication.
+- **1.26.x Wine Crash Resolver:** Built-in dynamic binary patching engine (`combase.dll` and `ntdll.dll` exception stubs) that solves startup crashes on Bedrock 1.26.x protocol updates.
+- **Self-Healing DLL Integrity:** Performs SHA-256 validation on GDK dependency files. If a game update or file validation restores vanilla Microsoft DLLs, the launcher automatically detects it, backs up the new vanilla DLLs, and re-applies the patched versions.
+- **Robust Downloader Engine:** Multi-attempt download retries with active read socket timeouts for Adoptium JRE, GDK-Proton, ProxyPass, and dependency DLLs to prevent "dead downloads" and UI freezes on unstable connections.
+- **Automatic Dependency Management:** Downloads and extracts dependencies and runtime engines directly inside the interface.
+- **Integrated Store:** Download and install custom archive resource packs, mods, and skins with a single click.
+- **options.txt Editor:** Search and edit in-game settings directly from the UI.
 
 ## 🛠️ System Requirements
 
@@ -57,7 +58,7 @@ chmod +x build-appimage.sh
 ./build-appimage.sh
 ```
 
-- **Output:** `Minecraft_GDK_Launcher-x86_64.AppImage`
+- **Output:** `Minecraft_GDK_Launcher-v2.4.6-x86_64.AppImage`
 - You can run the app directly by double-clicking this file, with no installation required.
 
 ### 3. Flatpak Sandboxed Installation
