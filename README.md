@@ -58,7 +58,7 @@ chmod +x build-appimage.sh
 ./build-appimage.sh
 ```
 
-- **Output:** `Minecraft_GDK_Launcher-v2.4.6-x86_64.AppImage`
+- **Output:** `Minecraft_GDK_Launcher-v3.2-x86_64.AppImage`
 - You can run the app directly by double-clicking this file, with no installation required.
 
 ### 3. Flatpak Sandboxed Installation
