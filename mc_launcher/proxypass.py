@@ -359,28 +359,57 @@ def ensure_proxypass(on_status) -> Optional[str]:
             raise RuntimeError("ProxyPass.jar bulunamadı.")
 
         url = asset["browser_download_url"]
-        req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
-        with urllib.request.urlopen(req2, timeout=60) as resp, open(tmp_jar_path, "wb") as out:
-            total = int(resp.headers.get("Content-Length") or 0)
-            done = 0
-            while True:
-                chunk = resp.read(1024 * 64)
-                if not chunk:
-                    break
-                out.write(chunk)
-                done += len(chunk)
-                if total > 0:
-                    percent = min(100, int(done * 100 / total))
-                    done_mb = done / (1024 * 1024)
-                    total_mb = total / (1024 * 1024)
-                    on_status(f"{_t('progress_download_proxypass')} {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)", "running")
-                else:
-                    on_status(f"{_t('progress_download_proxypass')} ({done // 1024} KB)", "running")
-            out.flush()
+        max_attempts = 3
+        success = False
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
             try:
-                os.fsync(out.fileno())
-            except OSError:
-                pass
+                if attempt > 1:
+                    print(f"[ProxyPass] Download attempt {attempt}/{max_attempts}...")
+                req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
+                with urllib.request.urlopen(req2, timeout=30) as resp:
+                    try:
+                        resp.fp.raw._sock.settimeout(30.0)
+                    except Exception:
+                        pass
+                    
+                    with open(tmp_jar_path, "wb") as out:
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        done = 0
+                        while True:
+                            chunk = resp.read(1024 * 64)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                            done += len(chunk)
+                            if total > 0:
+                                percent = min(100, int(done * 100 / total))
+                                done_mb = done / (1024 * 1024)
+                                total_mb = total / (1024 * 1024)
+                                status_msg = f"{_t('progress_download_proxypass')} {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)"
+                                if attempt > 1:
+                                    status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                on_status(status_msg, "running")
+                            else:
+                                status_msg = f"{_t('progress_download_proxypass')} ({done // 1024} KB)"
+                                if attempt > 1:
+                                    status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                on_status(status_msg, "running")
+                        out.flush()
+                        try:
+                            os.fsync(out.fileno())
+                        except OSError:
+                            pass
+                success = True
+                break
+            except Exception as e:
+                last_error = e
+                print(f"[ProxyPass] Download attempt {attempt} failed: {e}")
+                import time
+                time.sleep(2)
+        
+        if not success:
+            raise last_error or RuntimeError("ProxyPass download failed after 3 attempts.")
 
         if os.path.exists(tmp_jar_path):
             os.replace(tmp_jar_path, jar_path)

@@ -287,5 +287,13 @@
     "wizard_step2_title": "2. ProxyPass & Java Setup",
     "wizard_step3_desc": "GDK-Proton is a custom Wine/Proton compatibility layer that runs Minecraft Bedrock GDK on Linux. You can download the latest version from GitHub automatically.",
     "wizard_step3_title": "3. GDK-Proton Setup",
-    "wizard_title": "Setup Wizard"
+    "wizard_title": "Setup Wizard",
+    "status_restoring_vanilla": "Restoring clean vanilla game files for ProxyPass...",
+    "status_updating_session": "Updating in-game Microsoft session...",
+    "status_preparing_proxypass_xuser": "Preparing ProxyPass mode (xuser Proton + DLL patches)...",
+    "status_downloading_steamrt3": "Steam Linux Runtime (steamrt3) is missing. Downloading, this may take a few minutes...",
+    "status_game_running": "Game is running...",
+    "status_game_exited": "Game closed (exit: {ret})",
+    "status_game_error": "Error: {error}",
+    "status_scanning_disks": "Scanning disks... Please wait."
 }

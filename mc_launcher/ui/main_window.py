@@ -3313,7 +3313,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         # 3. If the game is currently running, restart ProxyPass in the background
         is_game_running = bool(self._game_procs.get("game") and self._game_procs["game"].poll() is None)
         if is_game_running:
-            self._set_status("ProxyPass yeniden başlatılıyor...", "running")
+            self._set_status(_t("toast_proxypass_restarting"), "running")
             
             def restart_worker():
                 try:
@@ -3382,17 +3382,17 @@ class LauncherWindow(Adw.ApplicationWindow):
                         threading.Thread(target=_read_proxy, args=(proxy_proc,), daemon=True).start()
                         time.sleep(2)
                         
-                        GLib.idle_add(self._toast, "ProxyPass başarıyla yeniden başlatıldı!")
-                        GLib.idle_add(self._set_status, "Oyun çalışıyor...", "running")
+                        GLib.idle_add(self._toast, _t("toast_proxypass_restart_ok"))
+                        GLib.idle_add(self._set_status, _t("status_game_running"), "running")
                     else:
-                        GLib.idle_add(self._toast, "ProxyPass yeniden başlatılamadı (Eksik bileşenler).")
+                        GLib.idle_add(self._toast, _t("toast_proxypass_restart_failed"))
                 except Exception as ex:
                     print(f"[PROXY] Restart error: {ex}")
                     GLib.idle_add(self._toast, f"Yeniden başlatma hatası: {ex}")
             
             threading.Thread(target=restart_worker, daemon=True).start()
         else:
-            self._toast("ProxyPass süreçleri temizlendi.")
+            self._toast(_t("toast_proxypass_cleaned"))
         
         self._refresh_all_states()
 

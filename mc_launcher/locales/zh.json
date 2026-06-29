@@ -23,7 +23,7 @@
     "btn_copy_code": "复制验证码",
     "btn_download": "下载",
     "btn_download_msstore": "从 Microsoft Store 下载",
-    "btn_download_where": "从哪里下载游戏 file？",
+    "btn_download_where": "从哪里下载游戏文件？",
     "btn_install_file": "从文件安装",
     "btn_install_folder": "从文件夹安装",
     "btn_install_mod": "安装",
@@ -287,5 +287,13 @@
     "wizard_step2_title": "2. ProxyPass & Java 设置",
     "wizard_step3_desc": "GDK-Proton 是一个专为在 Linux 上运行 Minecraft 基岩版 GDK 的自定义 Wine/Proton 兼容层。您可以从 GitHub 自动下载最新版本。",
     "wizard_step3_title": "3. GDK-Proton 设置",
-    "wizard_title": "设置向导"
+    "wizard_title": "设置向导",
+    "status_restoring_vanilla": "正在还原 ProxyPass 的原生游戏文件...",
+    "status_updating_session": "正在更新游戏内微软会话...",
+    "status_preparing_proxypass_xuser": "正在准备 ProxyPass 模式 (xuser Proton + DLL 补丁)...",
+    "status_downloading_steamrt3": "缺少 Steam Linux Runtime (steamrt3)。正在下载，这可能需要几分钟...",
+    "status_game_running": "游戏正在运行...",
+    "status_game_exited": "游戏已退出 (代码: {ret})",
+    "status_game_error": "错误: {error}",
+    "status_scanning_disks": "正在扫描磁盘... 请稍候。"
 }

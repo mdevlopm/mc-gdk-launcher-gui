@@ -11,11 +11,12 @@ import time
 import traceback
 from typing import Callable, List, Optional
 
-from mc_launcher.config import SCRIPT_DIR, COMPAT_DATA
+from mc_launcher.config import SCRIPT_DIR, COMPAT_DATA, DATA_DIR
 from mc_launcher.proxypass import find_proxypass, ensure_proxypass
 from mc_launcher.java_rt import ensure_java
-from mc_launcher.proton import ensure_umu
+from mc_launcher.proton import ensure_umu, patch_proton
 from mc_launcher.gameinput import install_gameinput
+from mc_launcher.i18n import _t
 from pathlib import Path
 
 
@@ -232,16 +233,115 @@ def launch_game(
 
             if result.get("cancelled"):
                 return
+
+            # Proton binary dosyalarını GDK uyumluluğu için yama yapıyoruz (combase.dll, ntdll.dll stubs)
+            try:
+                patch_proton(proton)
+            except Exception as pe:
+                print(f"[LAUNCH] Proton yamalama hatası: {pe}")
             if login_method == "proxypass":
-                on_status("ProxyPass için temiz oyun dosyaları geri yükleniyor...", "running")
+                # ============================================================
+                # YENİ ProxyPass STRATEJİSİ: xuser Proton + DLL yamaları
+                # ============================================================
+                #
+                # ESKİ davranış (sorunlu):
+                #   - restore_vanilla_state() çağrılır → DLL yamaları kaldırılır
+                #   - Normal (xuser olmayan) Proton kullanılır
+                #   - Sonuç: XUser implementasyonu eksik → oyun çöker
+                #
+                # YENİ davranış (düzeltilmiş):
+                #   - xuser Proton kullanılır (find_proton artık xuser tercih eder)
+                #   - DLL yamaları KURULUR (xuser Proton bunlara ihtiyaç duyar)
+                #   - restore_vanilla_state ÇAĞRILMAZ (yamaları korumak için)
+                #   - ProxyPass.jar auth'u Bedrock protokol katmanında halleder
+                #   - Registry preauth UYGULANMAZ (ProxyPass auth sağlar)
+                #   - UMU launcher ile başlatılır (GPU sürücü izolasyonu)
+                #
+                # Bu sayede xuser Proton + DLL yamaları + ProxyPass birlikte
+                # sorunsuz çalışır.
+                # ============================================================
+                on_status(_t("status_preparing_proxypass_xuser"), "running")
                 try:
-                    from mc_launcher.preauth import restore_vanilla_state, wine_disable_winegdk_preauth, hide_signin_button
+                    from mc_launcher.config import DATA_DIR
+                    from mc_launcher.preauth import (
+                        wine_disable_winegdk_preauth, hide_signin_button,
+                        install_gdk_xbox_dlls, patch_gui_signin_gate
+                    )
                     pfx = os.path.join(COMPAT_DATA, "pfx")
-                    restore_vanilla_state(os.path.dirname(exe), pfx)
+                    os.makedirs(pfx, exist_ok=True)
+
+                    # --- Adım 1: Stale ingame registry token'larını temizle ---
+                    # Önceki ingame modundan kalma ForceMsaFacet ve RefreshToken
+                    # değerlerini sil. ProxyPass auth'u ağ katmanında halleder,
+                    # bu registry değerlerine ihtiyaç duymaz.
                     wine_disable_winegdk_preauth(proton, pfx, env)
+
+                    # --- Adım 2: GDK Xbox DLL yamalarını kur ---
+                    # xuser Proton'un XUser yamaları, oyunun HTTP trafiğinin
+                    # OpenSSL üzerinden gitmesi için bu DLL'lere ihtiyaç duyar:
+                    #   - XCurl.dll → OpenSSL XCurl shim (GnuTLS bypass)
+                    #   - libHttpClient.GDK.dll → XCurl provider'a zorla (binary patch)
+                    #   - cacert.pem → sertifika paketi
+                    #   - cryptbase.dll → Wine prefix system32 (RNG stub)
+                    # Yamalar .bol-orig backup ile idempotent'tir — tekrar
+                    # kurulduğunda zarar vermez.
+                    on_status("GDK Xbox DLL yamaları yükleniyor (xuser Proton için)...", "running")
+                    install_gdk_xbox_dlls(
+                        os.path.dirname(exe), DATA_DIR, pfx, on_status
+                    )
+
+                    # --- Adım 3: GnuTLS TLS 1.3 sorununu önle ---
+                    # Wine'ın kendi GnuTLS kullanımı için TLS 1.3'ü devre dışı bırak.
+                    # (DLL yamaları oyunun HTTP'ini OpenSSL'e yönlendirir, ama
+                    # Wine'ın kendisi GnuTLS kullanmaya devam eder — bu da JA3
+                    # fingerprint sorununa takılabilir.)
+                    etc_dir = os.path.join(DATA_DIR, "etc")
+                    os.makedirs(etc_dir, exist_ok=True)
+                    prio_file = os.path.join(etc_dir, "gnutls-no-tls13.cfg")
+                    if not os.path.exists(prio_file):
+                        try:
+                            with open(prio_file, "w") as f:
+                                f.write("[priorities]\nSYSTEM = NORMAL:-VERS-TLS1.3:%COMPAT\n")
+                        except Exception as e:
+                            print(f"[LAUNCH] GnuTLS öncelik dosyası yazma hatası: {e}")
+                    env["GNUTLS_SYSTEM_PRIORITY_FILE"] = prio_file
+                    env["GNUTLS_SYSTEM_PRIORITY_FAIL_ON_INVALID"] = "0"
+
+                    # --- Adım 4: HBUI sign-in gate'i yamala ---
+                    # ProxyPass auth sağlasa bile, oyun UI'ı XUser üzerinden
+                    # giriş yapılmış olarak görünmeyebilir. Bu yama, multiplayer
+                    # ve sunucu menülerinin açılmasını garanti eder.
+                    # (Idempotent — .bak backup sadece ilk sefer oluşturulur)
+                    try:
+                        patch_gui_signin_gate(os.path.dirname(exe))
+                    except Exception as e:
+                        print(f"[LAUNCH] GUI yamalama hatası: {e}")
+
+                    # --- Adım 5: Sign-in butonunu gizle (kosmetik) ---
+                    # ProxyPass modunda in-game sign-in butonu çalışmaz,
+                    # gizlemek kullanıcı deneyimini iyileştirir.
                     hide_signin_button(os.path.dirname(exe))
+
+                    # ============================================================
+                    # YAPILMAYAN işlemler (ve nedenleri):
+                    # ============================================================
+                    # restore_vanilla_state: ÇAĞRILMAZ
+                    #   Sebep: xuser Proton DLL yamalarına ihtiyaç duyar.
+                    #   restore_vanilla_state yamaları kaldırırsa oyun çöker.
+                    #
+                    # wine_apply_winegdk_prereqs: ÇAĞRILMAZ
+                    #   Sebep: ProxyPass auth'u ağ katmanında halleder.
+                    #   ForceMsaFacet ve RefreshToken gerekmez.
+                    #
+                    # run_xbl_preauth: ÇAĞRILMAZ
+                    #   Sebep: device.json gerekmez, ProxyPass auth sağlar.
+                    #
+                    # WINEGDK_PREAUTH_DEVICE: SET EDİLMEZ
+                    #   Sebep: device.json yok, ProxyPass auth sağlar.
+                    # ============================================================
                 except Exception as e:
-                    print(f"[LAUNCH] Hata (dosya geri yükleme): {e}")
+                    print(f"[LAUNCH] Hata (ProxyPass hazırlık): {e}")
+                    on_status(f"ProxyPass hazırlama hatası: {e}", "error")
 
                 if jar and java_bin:
                     print(f"[PROXY] Başlatılıyor: {jar}")
@@ -305,7 +405,7 @@ def launch_game(
                     install_gdk_xbox_dlls, hide_signin_button
                 )
                 
-                on_status("Oyun içi Microsoft oturumu güncelleniyor...", "running")
+                on_status(_t("status_updating_session"), "running")
                 
                 # 1. Read token
                 token_file = os.path.join(DATA_DIR, "msa", "token.json")
@@ -399,13 +499,19 @@ def launch_game(
 
             # GDK multiplayer/LAN ve ekran kartı sürücülerinin izole çalışması için oyunu umu-launcher (Steam Linux Runtime) aracılığıyla başlatıyoruz.
             # UMU, steamrt3 (pressure-vessel) ile hem X11 hem Wayland bağlantılarını container içine alır.
-            umu_run = ensure_umu(on_status) if login_method == "ingame" else None
+            #
+            # ÖNEMLİ: Artık her iki modda (proxypass + ingame) da UMU launcher kullanılıyor.
+            # Sebep: xuser Proton, pressure-vessel (steamrt3) container'ı içinde
+            # GPU sürücülerini (özellikle NVIDIA) doğru şekilde mount etmek için
+            # UMU'ya ihtiyaç duyar. UMU olmadan xuser Proton GPU erişiminde
+            # sorunlar yaşayabilir.
+            umu_run = ensure_umu(on_status)
             if umu_run:
                 # steamrt3 runtime'ının yüklü olup olmadığını kontrol edip, eksikse otomatik indirmeyi aktif ediyoruz.
                 xdg_data = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
                 umu_shim = os.path.join(xdg_data, "umu", "steamrt3", "umu-shim")
                 if not os.path.exists(umu_shim):
-                    on_status("Steam Linux Runtime (steamrt3) eksik. İndiriliyor, bu işlem birkaç dakika sürebilir...", "running")
+                    on_status(_t("status_downloading_steamrt3"), "running")
                     runtime_update = "1"
                 else:
                     runtime_update = "0"
@@ -440,7 +546,7 @@ def launch_game(
                             except Exception:
                                 pass
 
-                cmd = [sys.executable, umu_run, exe]
+                cmd = [umu_run, exe]
                 env.update({
                     "GAMEID": "0",
                     "PROTONPATH": os.path.dirname(proton),
@@ -519,14 +625,14 @@ def launch_game(
             t1.start()
             t2.start()
 
-            on_status("Oyun çalışıyor...", "running")
+            on_status(_t("status_game_running"), "running")
             ret = proc.wait()
             t1.join(timeout=3)
             t2.join(timeout=3)
-            on_status(f"Oyun kapandı (exit: {ret})", "ok" if ret == 0 else "error")
+            on_status(_t("status_game_exited", ret=ret), "ok" if ret == 0 else "error")
         except Exception as e:
             print(f"[HATA]\n{traceback.format_exc()}")
-            on_status(f"Hata: {e}", "error")
+            on_status(_t("status_game_error", error=str(e)), "error")
         finally:
             if relay:
                 try:
@@ -584,7 +690,7 @@ def scan_for_exe(on_done: Callable[[List[str]], None], on_status: Callable):
         from gi.repository import GLib
         GLib.idle_add(on_done, found)
 
-    on_status("Diskler taranıyor... Lütfen bekleyin.", "running")
+    on_status(_t("status_scanning_disks"), "running")
     threading.Thread(target=worker, daemon=True).start()
 
 

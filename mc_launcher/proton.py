@@ -46,25 +46,45 @@ def _version_key(path: str):
 
 
 def find_proton(login_method: str = "proxypass") -> Optional[str]:
-    """GDK-Proton binary'sini arar, bulursa yolunu döner."""
+    """GDK-Proton binary'sini arar, bulursa yolunu döner.
+
+    Her zaman xuser sürümünü tercih eder. xuser sürümü hem ProxyPass hem de
+    Ingame modu için gerekli XUser yamalarını içerir.
+
+    Neden xuser her iki modda da kullanılır?
+    - Normal (xuser olmayan) GDK-Proton'da Wine'ın XUser implementasyonu
+      eksiktir; oyun XUser API çağrılarında çöker.
+    - xuser Proton, XUser yamalarını içerir VE DLL yamaları (XCurl,
+      libHttpClient.GDK.dll) ile uyumludur.
+    - ProxyPass auth'u Bedrock protokol katmanında (port 19132) çalışır;
+      xuser Proton ve DLL yamaları ile ÇAKIŞMAZ.
+    - Sonuç: xuser Proton + DLL yamaları + ProxyPass birlikte sorunsuz çalışır.
+
+    login_method parametresi geriye dönük uyumluluk için korunmuştur, ancak
+    artık sürüm seçimini etkilemez (her zaman xuser tercih edilir).
+    """
     hits = []
     for base in _proton_search_dirs():
         for path in glob.glob(os.path.join(base, "GDK-Proton*", "proton")):
             hits.append(path)
-            
+
     if not hits:
         return None
 
     xuser_hits = [p for p in hits if "xuser" in os.path.basename(os.path.dirname(p)).lower()]
     non_xuser_hits = [p for p in hits if p not in xuser_hits]
 
-    if login_method == "ingame":
-        if xuser_hits:
-            return sorted(set(xuser_hits), key=_version_key)[-1]
-    else: # proxypass
-        if non_xuser_hits:
-            return sorted(set(non_xuser_hits), key=_version_key)[-1]
-        
+    # xuser sürümü her zaman tercih edilir (her iki mod için de çalışır)
+    if xuser_hits:
+        return sorted(set(xuser_hits), key=_version_key)[-1]
+
+    # xuser yoksa normal sürüme düş (eski davranış — uyarı ile)
+    if non_xuser_hits:
+        print("[Proton] UYARI: xuser GDK-Proton bulunamadı, normal sürüm kullanılıyor.")
+        print("[Proton] ProxyPass modunun düzgün çalışması için xuser sürümü önerilir.")
+        print("[Proton] İndirme için 'Download' butonunu kullanın (Wyze3306/BedrockOnLinux).")
+        return sorted(set(non_xuser_hits), key=_version_key)[-1]
+
     return None
 
 
@@ -114,67 +134,85 @@ def _do_extract(tar_path: str, on_status: Callable, remove_after: bool = False, 
 
 def download_proton(on_status: Callable, on_done: Callable, login_method: str = "proxypass"):
     """
-    GitHub API'den GDK-Proton'un son sürümünü indirir ve kurar.
+    GitHub API'den GDK-Proton'un xuser sürümünü indirir ve kurar.
     on_status(msg, style), on_done(success: bool) background thread'den çağrılır.
+
+    Artık her zaman xuser sürümü indirilir (hem ProxyPass hem Ingame modu için).
+    xuser sürümü Wyze3306/BedrockOnLinux reposundan gelir.
     """
     from mc_launcher.i18n import _t
-    use_xuser = (login_method == "ingame")
+    # Her zaman xuser sürümünü indir — her iki modda da xuser Proton kullanılır.
+    # xuser Proton, ProxyPass + Ingame modlarının ikisini de destekler çünkü:
+    #   1. XUser yamaları içerir (oyun düzgün başlar)
+    #   2. DLL yamaları ile uyumlu (install_gdk_xbox_dlls)
+    #   3. ProxyPass ile çakışmaz (farklı protokol katmanı)
+    use_xuser = True
 
     def worker():
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
             on_status(_t("progress_query_github"), "running")
-            if use_xuser:
-                api_url = "https://api.github.com/repos/Wyze3306/BedrockOnLinux/releases"
-            else:
-                api_url = GDK_API
+            # xuser sürümü Wyze3306/BedrockOnLinux reposundan indirilir
+            api_url = "https://api.github.com/repos/Wyze3306/BedrockOnLinux/releases"
             req = urllib.request.Request(api_url, headers={"User-Agent": "mc-gdk-launcher"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 data = json.loads(r.read())
-            
+
             asset = None
-            if use_xuser:
-                if isinstance(data, list):
-                    for release in data:
-                        asset = next(
-                            (a for a in release.get("assets", []) if a["name"].endswith(".tar.gz") and "xuser" in a["name"].lower()), None
-                        )
-                        if asset:
-                            break
-            else:
-                if isinstance(data, list):
-                    for release in data:
-                        asset = next(
-                            (a for a in release.get("assets", []) if a["name"].endswith(".tar.gz") and "xuser" not in a["name"].lower()), None
-                        )
-                        if asset:
-                            break
-                else:
+            # xuser içeren .tar.gz asset'ini ara
+            if isinstance(data, list):
+                for release in data:
                     asset = next(
-                        (a for a in data.get("assets", []) if a["name"].endswith(".tar.gz") and "xuser" not in a["name"].lower()), None
+                        (a for a in release.get("assets", []) if a["name"].endswith(".tar.gz") and "xuser" in a["name"].lower()), None
                     )
+                    if asset:
+                        break
 
             if not asset:
-                raise RuntimeError("tar.gz bulunamadı.")
+                raise RuntimeError("xuser tar.gz bulunamadı. Wyze3306/BedrockOnLinux reposunu kontrol edin.")
             tar_path = os.path.join(_install_dir(), asset["name"])
 
             on_status(f"{_t('progress_download_proton')} ({asset['name']})", "running")
             url = asset["browser_download_url"]
-            req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
-            with urllib.request.urlopen(req2, timeout=120) as resp, open(tar_path, "wb") as out:
-                total = int(resp.headers.get("Content-Length") or 0)
-                done = 0
-                while True:
-                    chunk = resp.read(1024 * 256)
-                    if not chunk:
-                        break
-                    out.write(chunk)
-                    done += len(chunk)
-                    if total > 0:
-                        percent = min(100, int(done * 100 / total))
-                        done_mb = done / (1024 * 1024)
-                        total_mb = total / (1024 * 1024)
-                        on_status(f"{_t('progress_download_proton')} {done_mb:.1f} MB / {total_mb:.1f} MB ({percent}%)", "running")
+            max_attempts = 3
+            success = False
+            last_error = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    if attempt > 1:
+                        print(f"[Proton] Download attempt {attempt}/{max_attempts}...")
+                    req2 = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
+                    with urllib.request.urlopen(req2, timeout=30) as resp:
+                        try:
+                            resp.fp.raw._sock.settimeout(30.0)
+                        except Exception:
+                            pass
+                        with open(tar_path, "wb") as out:
+                            total = int(resp.headers.get("Content-Length") or 0)
+                            done = 0
+                            while True:
+                                chunk = resp.read(1024 * 256)
+                                if not chunk:
+                                    break
+                                out.write(chunk)
+                                done += len(chunk)
+                                if total > 0:
+                                    percent = min(100, int(done * 100 / total))
+                                    done_mb = done / (1024 * 1024)
+                                    total_mb = total / (1024 * 1024)
+                                    status_msg = f"{_t('progress_download_proton')} {done_mb:.1f} MB / {total_mb:.1f} MB ({percent}%)"
+                                    if attempt > 1:
+                                        status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                    on_status(status_msg, "running")
+                    success = True
+                    break
+                except Exception as e:
+                    last_error = e
+                    print(f"[Proton] Download attempt {attempt} failed: {e}")
+                    import time
+                    time.sleep(2)
+            if not success:
+                raise last_error or RuntimeError("GDK-Proton download failed after 3 attempts.")
             ok = _do_extract(tar_path, on_status, remove_after=True, login_method=login_method)
             if ok:
                 ensure_umu(on_status)
@@ -384,3 +422,155 @@ def ensure_umu(on_status: Callable) -> Optional[str]:
     except Exception as e:
         on_status(f"{_t('err_title')}: {e}", "error")
         return None
+
+
+class PE:
+    def __init__(self, path):
+        from pathlib import Path
+        self.path = Path(path)
+        d = self.data = self.path.read_bytes()
+        if d[:2] != b"MZ":
+            raise ValueError("not a PE")
+        import struct
+        e = struct.unpack_from("<I", d, 0x3C)[0]
+        if d[e:e + 4] != b"PE\0\0":
+            raise ValueError("bad PE signature")
+        coff = e + 4
+        nsec = struct.unpack_from("<H", d, coff + 2)[0]
+        opt = coff + 20
+        if struct.unpack_from("<H", d, opt)[0] != 0x20B:
+            raise ValueError("not PE32+")
+        self.exp_rva = struct.unpack_from("<I", d, opt + 112)[0]
+        sect = opt + struct.unpack_from("<H", d, coff + 16)[0]
+        self.secs = []
+        for i in range(nsec):
+            b = sect + i * 40
+            vsz, va, rsz, raw = struct.unpack_from("<IIII", d, b + 8)
+            self.secs.append((va, vsz, raw, rsz))
+
+    def rva2off(self, rva):
+        for va, vsz, raw, rsz in self.secs:
+            if va <= rva < va + max(vsz, rsz):
+                return raw + (rva - va)
+        return None
+
+    def off2rva(self, off):
+        for va, vsz, raw, rsz in self.secs:
+            if raw <= off < raw + rsz:
+                return va + (off - raw)
+        return None
+
+    def export_rva(self, name):
+        import struct
+        d = self.data
+        eo = self.rva2off(self.exp_rva)
+        if eo is None:
+            return None
+        nn = struct.unpack_from("<I", d, eo + 24)[0]
+        af = self.rva2off(struct.unpack_from("<I", d, eo + 28)[0])
+        an = self.rva2off(struct.unpack_from("<I", d, eo + 32)[0])
+        ao = self.rva2off(struct.unpack_from("<I", d, eo + 36)[0])
+        t = name.encode()
+        for i in range(nn):
+            no = self.rva2off(struct.unpack_from("<I", d, an + 4 * i)[0])
+            if d[no:d.index(b"\0", no)] == t:
+                od = struct.unpack_from("<H", d, ao + 2 * i)[0]
+                return struct.unpack_from("<I", d, af + 4 * od)[0]
+        return None
+
+    def export_off(self, name):
+        r = self.export_rva(name)
+        return self.rva2off(r) if r is not None else None
+
+
+def _backup_once(path):
+    import shutil
+    bk = path.with_suffix(path.suffix + ".bol-orig")
+    if not bk.exists():
+        shutil.copy2(path, bk)
+
+
+def apply_patch(path, off, expect, new, what, strict=True, relax=False):
+    from pathlib import Path
+    path = Path(path)
+    raw = bytearray(path.read_bytes())
+    if bytes(raw[off:off + len(new)]) == new:
+        print(f"[PATCH] {what}: already patched")
+        return False
+    if bytes(raw[off:off + len(expect)]) != expect:
+        got = bytes(raw[off:off + len(expect)]).hex()
+        if not relax:
+            msg = f"[PATCH] {what}: unexpected bytes at 0x{off:x} — patch skipped."
+            if strict:
+                raise RuntimeError(msg)
+            print(msg)
+            return False
+        print(f"[PATCH] {what}: prologue {got} at 0x{off:x} differs — stubbing anyway.")
+    _backup_once(path)
+    raw[off:off + len(new)] = new
+    path.write_bytes(raw)
+    print(f"[PATCH] {what}: patched")
+    return True
+
+
+def patch_proton(proton_bin_path: str, strict=False):
+    """Two binary patches that let Bedrock GDK 1.26 run under Wine.
+    Idempotent; offsets found structurally; backups as *.bol-orig."""
+    from pathlib import Path
+    import struct
+    
+    root = Path(os.path.dirname(proton_bin_path))
+    def fail(m):
+        if strict:
+            raise RuntimeError(m)
+        print(f"[PATCH] {m} (continuing)")
+
+    wine = root / "files/lib/wine/x86_64-windows"
+    if not wine.exists():
+        wine = root / "files/lib64/wine/x86_64-windows"
+    
+    combase, ntdll = wine / "combase.dll", wine / "ntdll.dll"
+    if not combase.exists() or not ntdll.exists():
+        return fail(f"Wine DLLs missing in {wine}")
+
+    try:
+        pe_combase = PE(combase)
+        off = pe_combase.export_off("RoOriginateErrorW")
+        if off is None:
+            return fail("RoOriginateErrorW not found in combase.dll")
+        apply_patch(combase, off, bytes.fromhex("4883ec28"),
+                    bytes.fromhex("31c0c3") + b"\x90" * 21,
+                    "combase.RoOriginateErrorW", strict=strict, relax=True)
+    except Exception as e:
+        fail(f"combase patch failed: {e}")
+
+    try:
+        pe_ntdll = PE(ntdll)
+        rre = pe_ntdll.export_rva("RtlRaiseException")
+        if rre is None:
+            return fail("RtlRaiseException not resolved in ntdll.dll")
+        d = pe_ntdll.data
+        sig = bytes.fromhex("55534881ecc8000000488dac24c0000000")
+        new = bytes.fromhex("b8020000c0c3") + b"\x90\x90"
+        funnels, i = [], d.find(sig)
+        while i >= 0:
+            j = d.find(bytes.fromhex("4889d9e8"), i, i + 0x90)
+            if j >= 0:
+                cf = j + 3
+                rel = struct.unpack_from("<i", d, cf + 1)[0]
+                if pe_ntdll.off2rva(cf) + 5 + rel == rre and d[cf + 5:cf + 7] == b"\xeb\xf6":
+                    funnels.append(i)
+            i = d.find(sig, i + 1)
+        if funnels:
+            raw = bytearray(d)
+            for o in funnels:
+                raw[o:o + len(new)] = new
+            _backup_once(ntdll)
+            ntdll.write_bytes(bytes(raw))
+            print(f"[PATCH] ntdll: {len(funnels)} stub(s) neutralised")
+        elif d.count(new + bytes.fromhex("00488dac24c0000000")):
+            print("[PATCH] ntdll: already patched")
+        else:
+            fail("ntdll: no stub found — Proton layout changed.")
+    except Exception as e:
+        fail(f"ntdll patch failed: {e}")

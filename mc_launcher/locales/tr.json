@@ -287,5 +287,13 @@
     "wizard_step2_title": "2. ProxyPass & Java Kurulumu",
     "wizard_step3_desc": "GDK-Proton, Minecraft Bedrock GDK'yı Linux üzerinde çalıştıran özel bir Wine/Proton sürümüdür. GitHub'dan en son sürümü otomatik indirebilirsiniz.",
     "wizard_step3_title": "3. GDK-Proton Kurulumu",
-    "wizard_title": "Kurulum Sihirbazı"
+    "wizard_title": "Kurulum Sihirbazı",
+    "status_restoring_vanilla": "ProxyPass için temiz oyun dosyaları geri yükleniyor...",
+    "status_updating_session": "Oyun içi Microsoft oturumu güncelleniyor...",
+    "status_preparing_proxypass_xuser": "ProxyPass modu hazırlanıyor (xuser Proton + DLL yamaları)...",
+    "status_downloading_steamrt3": "Steam Linux Runtime (steamrt3) eksik. İndiriliyor, bu işlem birkaç dakika sürebilir...",
+    "status_game_running": "Oyun çalışıyor...",
+    "status_game_exited": "Oyun kapandı (exit: {ret})",
+    "status_game_error": "Hata: {error}",
+    "status_scanning_disks": "Diskler taranıyor... Lütfen bekleyin."
 }

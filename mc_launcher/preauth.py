@@ -11,6 +11,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import subprocess
+import hashlib
 import uuid as _uuid
 from typing import Optional
 
@@ -574,24 +575,51 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
     os.makedirs(cache_dir, exist_ok=True)
     
     def download_with_progress(url, dest, label):
-        req = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as out:
-            total = int(resp.headers.get("Content-Length") or 0)
-            done = 0
-            while True:
-                chunk = resp.read(1024 * 64)
-                if not chunk:
-                    break
-                out.write(chunk)
-                done += len(chunk)
-                if on_status:
-                    if total > 0:
-                        percent = min(100, int(done * 100 / total))
-                        done_mb = done / (1024 * 1024)
-                        total_mb = total / (1024 * 1024)
-                        on_status(f"{label}... {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)", "running")
-                    else:
-                        on_status(f"{label}... ({done // 1024} KB)", "running")
+        max_attempts = 3
+        success = False
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if attempt > 1:
+                    print(f"[PreAuth] Download attempt {attempt}/{max_attempts} for {url}...")
+                req = urllib.request.Request(url, headers={"User-Agent": "mc-gdk-launcher"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    try:
+                        resp.fp.raw._sock.settimeout(30.0)
+                    except Exception:
+                        pass
+                    with open(dest, "wb") as out:
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        done = 0
+                        while True:
+                            chunk = resp.read(1024 * 64)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                            done += len(chunk)
+                            if on_status:
+                                if total > 0:
+                                    percent = min(100, int(done * 100 / total))
+                                    done_mb = done / (1024 * 1024)
+                                    total_mb = total / (1024 * 1024)
+                                    status_msg = f"{label}... {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)"
+                                    if attempt > 1:
+                                        status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                    on_status(status_msg, "running")
+                                else:
+                                    status_msg = f"{label}... ({done // 1024} KB)"
+                                    if attempt > 1:
+                                        status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                    on_status(status_msg, "running")
+                success = True
+                break
+            except Exception as e:
+                last_error = e
+                print(f"[PreAuth] Download attempt {attempt} failed: {e}")
+                import time
+                time.sleep(2)
+        if not success:
+            raise last_error or RuntimeError(f"Download failed for {url} after {max_attempts} attempts.")
     
     # 1. Download GDK deps (libHttpClient.GDK.dll, XCurl.dll)
     gdk_deps_url = "https://github.com/minecraft-linux/mcpelauncher-gdk-dependencies/releases/download/v0.0.0"
@@ -600,9 +628,8 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
     for nm in gdk_deps_dlls:
         dst = os.path.join(game_dir, nm)
         bak = dst + ".bol-orig"
-        if os.path.exists(bak):
-            continue
         cached = os.path.join(cache_dir, "gdkdeps-" + nm)
+        
         if not os.path.isfile(cached):
             print(f"[PreAuth] Downloading {nm}...")
             try:
@@ -610,11 +637,31 @@ def install_gdk_xbox_dlls(game_dir: str, data_dir: str, pfx_path: str, on_status
             except Exception as e:
                 print(f"[PreAuth] Error downloading {nm}: {e}")
                 continue
-        if os.path.isfile(dst) and not os.path.exists(bak):
-            shutil.copy2(dst, bak)
-        if os.path.isfile(cached):
-            shutil.copy2(cached, dst)
-            print(f"[PreAuth] Installed GDK dep {nm}")
+
+        # Self-healing: Check if the installed DLL matches our patched cached version
+        def get_sha256(p):
+            if not os.path.isfile(p):
+                return None
+            h = hashlib.sha256()
+            try:
+                with open(p, "rb") as f:
+                    while chunk := f.read(8192):
+                        h.update(chunk)
+                return h.hexdigest()
+            except Exception:
+                return None
+
+        dst_hash = get_sha256(dst)
+        cached_hash = get_sha256(cached)
+
+        # If dst is missing or differs from the cached patched DLL, reinstall it
+        if dst_hash != cached_hash:
+            if os.path.isfile(dst) and not os.path.exists(bak):
+                shutil.copy2(dst, bak)
+                print(f"[PreAuth] Backed up original {nm} to {os.path.basename(bak)}")
+            if os.path.isfile(cached):
+                shutil.copy2(cached, dst)
+                print(f"[PreAuth] Installed/Restored GDK dep {nm} (hash check synced ✓)")
 
     # 2. Download and extract OpenSSL XCurl set
     openssl_set_dir = os.path.join(data_dir, "xodus-xcurl", "openssl-set")

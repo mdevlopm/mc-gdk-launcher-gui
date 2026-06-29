@@ -84,27 +84,54 @@ def ensure_java(on_status) -> Optional[str]:
         from mc_launcher.i18n import _t
         on_status(_t("progress_download_java"), "running")
         os.makedirs(RUNTIME_DIR, exist_ok=True)
-        req = urllib.request.Request(
-            JAVA_URL, headers={"User-Agent": "mc-gdk-launcher"}
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp, open(
-            tmp_tar_path, "wb"
-        ) as out_f:
-            total = int(resp.headers.get("Content-Length") or 0)
-            done = 0
-            while True:
-                chunk = resp.read(1024 * 64)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                done += len(chunk)
-                if total > 0:
-                    percent = min(100, int(done * 100 / total))
-                    done_mb = done / (1024 * 1024)
-                    total_mb = total / (1024 * 1024)
-                    on_status(f"{_t('progress_download_java')} {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)", "running")
-                else:
-                    on_status(f"{_t('progress_download_java')} ({done // 1024} KB)", "running")
+        max_attempts = 3
+        success = False
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if attempt > 1:
+                    print(f"[Java] JRE download attempt {attempt}/{max_attempts}...")
+                req = urllib.request.Request(
+                    JAVA_URL, headers={"User-Agent": "mc-gdk-launcher"}
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    try:
+                        resp.fp.raw._sock.settimeout(30.0)
+                    except Exception:
+                        pass
+                    
+                    with open(tmp_tar_path, "wb") as out_f:
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        done = 0
+                        while True:
+                            chunk = resp.read(1024 * 64)
+                            if not chunk:
+                                break
+                            out_f.write(chunk)
+                            done += len(chunk)
+                            if total > 0:
+                                percent = min(100, int(done * 100 / total))
+                                done_mb = done / (1024 * 1024)
+                                total_mb = total / (1024 * 1024)
+                                status_msg = f"{_t('progress_download_java')} {done_mb:.2f} MB / {total_mb:.2f} MB ({percent}%)"
+                                if attempt > 1:
+                                    status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                on_status(status_msg, "running")
+                            else:
+                                status_msg = f"{_t('progress_download_java')} ({done // 1024} KB)"
+                                if attempt > 1:
+                                    status_msg += f" (Attempt {attempt}/{max_attempts})"
+                                on_status(status_msg, "running")
+                success = True
+                break
+            except Exception as e:
+                last_error = e
+                print(f"[Java] JRE download attempt {attempt} failed: {e}")
+                import time
+                time.sleep(2)
+        
+        if not success:
+            raise last_error or RuntimeError("Adoptium JRE download failed after 3 attempts.")
 
         if os.path.exists(tmp_tar_path):
             os.replace(tmp_tar_path, tar_path)
