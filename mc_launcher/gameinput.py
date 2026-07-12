@@ -265,7 +265,6 @@ def _install_gameinput_via_msi(prefix: Path, msi: Path):
     hosts. Poll for the redist artifacts (they are written early) and kill the
     install the moment they appear, scoped to this prefix."""
     LOGS.mkdir(parents=True, exist_ok=True)
-    log = open(LOGS / "native-login.log", "a")
     cmd, env = proton_umu_cmd("msiexec", prefix=prefix)
     env["WINEDEBUG"] = "-all"
     overrides = ["cryptbase=n,b"]
@@ -273,24 +272,24 @@ def _install_gameinput_via_msi(prefix: Path, msi: Path):
         overrides.append(env["WINEDLLOVERRIDES"])
     env["WINEDLLOVERRIDES"] = ";".join(overrides)
     cmd += ["/i", "Z:" + str(msi).replace("/", "\\"), "/qn"]
-    proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                            start_new_session=True)
-    end = time.time() + 120
-    try:
-        while time.time() < end:
-            if proc.poll() is not None:
-                break
-            if gameinput_redist_ok(prefix):
-                time.sleep(2)          # let the last writes flush
-                break
-            time.sleep(2)
-    finally:
-        log.close()
-        if proc.poll() is None:
-            kill_prefix_procs(prefix)
-            try:
-                proc.wait(10)
-            except Exception:
-                proc.kill()
-        else:
-            kill_prefix_procs(prefix)
+    with open(LOGS / "native-login.log", "a") as log:
+        proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+        end = time.time() + 120
+        try:
+            while time.time() < end:
+                if proc.poll() is not None:
+                    break
+                if gameinput_redist_ok(prefix):
+                    time.sleep(2)          # let the last writes flush
+                    break
+                time.sleep(2)
+        finally:
+            if proc.poll() is None:
+                kill_prefix_procs(prefix)
+                try:
+                    proc.wait(10)
+                except Exception:
+                    proc.kill()
+            else:
+                kill_prefix_procs(prefix)

@@ -2945,7 +2945,7 @@ class LauncherWindow(Adw.ApplicationWindow):
 
         login_method = self.cfg.get("login_method", "proxypass")
         if login_method == "proxypass" and not auth_json_exists(exe):
-            self._show_error(_t("err_title"), _t("label_auth_required", "Please sign in first!"))
+            self._show_error(_t("err_title"), _t("label_auth_required"))
             self._on_proxy_login(None)
             return
 

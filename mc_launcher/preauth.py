@@ -329,7 +329,7 @@ def run_xbl_preauth(msa_access_token: str, data_dir: str) -> bool:
             f.write(json.dumps(out, indent=2))
             f.flush()
             try:
-                os.fsync(fd)
+                os.fsync(f.fileno())
             except OSError:
                 pass
         os.replace(tmp, out_path)
