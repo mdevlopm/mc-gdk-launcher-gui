@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **This project has moved to [mdevlopm/gomceix](https://github.com/mdevlopm/gomceix).** This repository is archived and no longer updated.
+
 # 🎮 Minecraft Bedrock Linux (GDK) Launcher
 
 A standalone launcher designed to run the Minecraft Bedrock (GDK) edition on Linux, built with GTK4 and Libadwaita for a premium, modern interface.
